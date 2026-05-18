@@ -1,6 +1,10 @@
 # Core inference
-vllm>=0.6.3
-torch>=2.4.0
+# NOTE: vLLM/torch versions track the host's CUDA driver. The defaults below
+# target CUDA 12.4 drivers (nvidia-smi "CUDA Version: 12.4"). If your driver
+# supports 12.6/12.8, you can bump these. See docs/SETUP.md §"驱动 / CUDA 不匹配".
+vllm==0.8.5
+torch==2.6.0
+torchvision==0.21.0
 transformers>=4.45.0
 accelerate>=0.34.0
 
