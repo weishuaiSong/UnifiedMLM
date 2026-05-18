@@ -1,0 +1,25 @@
+# Eval LLaVA-1.5-7B on shijianS01/mmbench-subset (100 samples, eval split).
+model:
+  name: llava-1.5-7b
+  config:
+    model_path: llava-hf/llava-1.5-7b-hf
+    tensor_parallel: 1
+    max_model_len: 4096
+    gpu_memory_util: 0.9
+    sampling:
+      temperature: 0.0
+      max_tokens: 128
+
+benchmark:
+  name: mmbench
+  config:
+    hf_path: shijianS01/mmbench-subset
+    hf_name: default     # no real config; loader skips passing this
+    split: eval
+
+extractor:
+  sim_threshold: 0.5
+  sentence_model: sentence-transformers/all-MiniLM-L6-v2
+
+batch_size: 16
+output_dir: outputs/llava15_mmbench_subset

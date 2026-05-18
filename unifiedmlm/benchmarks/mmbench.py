@@ -41,11 +41,16 @@ class MMBench(BaseBenchmark):
         super().__init__(config)
         from datasets import load_dataset
 
-        ds = load_dataset(
-            self.config.get("hf_path", self.DEFAULT_HF_PATH),
-            self.config.get("hf_name", self.DEFAULT_HF_NAME),
-            split=self.config.get("split", self.DEFAULT_SPLIT),
-        )
+        hf_path = self.config.get("hf_path", self.DEFAULT_HF_PATH)
+        hf_name = self.config.get("hf_name", self.DEFAULT_HF_NAME)
+        split = self.config.get("split", self.DEFAULT_SPLIT)
+
+        # Some packs (e.g. shijianS01/mmbench-subset) have no config name; passing
+        # one to load_dataset would error. Treat "default"/empty as "no config".
+        load_kwargs: dict[str, Any] = {"split": split}
+        if hf_name and hf_name != "default":
+            load_kwargs["name"] = hf_name
+        ds = load_dataset(hf_path, **load_kwargs)
         seed = self.config.get("shuffle_seed")
         if seed is not None:
             ds = ds.shuffle(seed=int(seed))
@@ -103,7 +108,11 @@ class MMBench(BaseBenchmark):
             choices=choices,
             metadata={
                 "category": row.get("category"),
-                "l2-category": row.get("l2-category"),
+                # column case differs across packs: lmms-lab uses "l2-category",
+                # shijianS01/mmbench-subset uses "L2-category"
+                "l2-category": row.get("l2-category") or row.get("L2-category"),
                 "source": row.get("source"),
+                "split": row.get("split"),
+                "comment": row.get("comment"),
             },
         )
