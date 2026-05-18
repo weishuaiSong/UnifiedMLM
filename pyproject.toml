@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unifiedmlm"
+version = "0.0.1"
+description = "Unified evaluation (and later training) pipeline for multimodal LLMs, vLLM-accelerated."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+
+[tool.setuptools.packages.find]
+include = ["unifiedmlm*"]
+
+[project.scripts]
+unifiedmlm-eval = "unifiedmlm.cli:main"

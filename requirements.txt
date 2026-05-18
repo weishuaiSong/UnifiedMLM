@@ -1,0 +1,19 @@
+# Core inference
+vllm>=0.6.3
+torch>=2.4.0
+transformers>=4.45.0
+accelerate>=0.34.0
+
+# Multimodal data
+Pillow>=10.0.0
+datasets>=2.20.0
+
+# Answer extraction
+sentence-transformers>=3.0.0
+scikit-learn>=1.3.0
+
+# Utilities
+pyyaml>=6.0
+tqdm>=4.66.0
+numpy>=1.26.0
+pandas>=2.0.0
