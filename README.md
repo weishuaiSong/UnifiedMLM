@@ -17,29 +17,30 @@ numbers that are directly comparable.
 
 ## ⚡ 环境与模型一览（先看这里）
 
-所有 8 个模型都跑在 **vLLM** 上，但**不同模型对 vLLM 版本要求不同**——硬塞一个 env 会冲突。建议按下表装 **3 个独立 conda env**（共享 HF 缓存），完整安装步骤见 [`docs/ENVS.md`](docs/ENVS.md)。
+vLLM 是首选 backend，但 **LLaVA-OV-1.5 / Molmo 2 的新架构截至 2026-05 还没进 vLLM 主线**；
+而能识别它们的 vLLM 0.21+ 又只发 cu13 wheel，跟 CUDA-12.4 驱动不兼容。所以这两个模型走
+**transformers backend** 兜底（wrapper 里 `backend: hf` 一行就切）。最终只需要 **2 个
+conda env**：详见 [`docs/ENVS.md`](docs/ENVS.md)。
 
-| 模型 | 注册名 | vLLM 支持 | 推荐 env |
-|---|---|---|---|
-| LLaVA-1.5-7B | `llava-1.5-7b` | ✅ 稳定（≥0.4）| `unifiedmlm-legacy` |
-| Qwen2.5-VL-7B-Instruct | `qwen2.5-vl-7b` | ✅ 稳定（≥0.7）| `unifiedmlm-legacy` |
-| LLaVA-OneVision-1.5-8B | `llava-onevision-1.5-8b` | ✅ 需 vLLM ≥ 0.10 | `unifiedmlm-current` |
-| Qwen3-VL-8B-Instruct | `qwen3-vl-8b` | ✅ 需 vLLM ≥ 0.10 | `unifiedmlm-current` |
-| InternVL3.5-8B | `internvl3.5-8b` | ✅ 需 vLLM ≥ 0.10 | `unifiedmlm-current` |
-| Molmo2-8B | `molmo2-8b` | ⚠️ 需 vLLM ≥ 0.11 + `--hf-overrides '{"architectures":["Molmo2ForConditionalGeneration"]}'` | `unifiedmlm-molmo2` |
-| Molmo2-O-7B | `molmo2-o-7b` | ⚠️ 同上 | `unifiedmlm-molmo2` |
-| Molmo2-4B | `molmo2-4b` | ⚠️ 同上 | `unifiedmlm-molmo2` |
+| 模型 | 注册名 | env | backend | MMBench-subset acc |
+|---|---|---|---|---|
+| LLaVA-1.5-7B | `llava-1.5-7b` | `unifiedmlm-legacy` | vLLM 0.8.5 | — |
+| Qwen2.5-VL-7B-Instruct | `qwen2.5-vl-7b` | `unifiedmlm-legacy` | vLLM 0.8.5 | 0.90 |
+| Qwen3-VL-8B-Instruct | `qwen3-vl-8b` | `unifiedmlm-current` | vLLM 0.11.2 | 0.96 |
+| InternVL3.5-8B | `internvl3.5-8b` | `unifiedmlm-current` | vLLM 0.11.2 | 0.90 |
+| LLaVA-OneVision-1.5-8B | `llava-onevision-1.5-8b` | `unifiedmlm-current` | **HF transformers** | 0.99 |
+| Molmo2-O-7B | `molmo2-o-7b` | `unifiedmlm-current` | **HF transformers** | 0.96 |
+| Molmo2-8B / 4B | `molmo2-8b` / `molmo2-4b` | `unifiedmlm-current` | **HF transformers** | (同上模式，待测) |
 
-**三个 env 的速查**（详细 pip 命令见 `docs/ENVS.md`）：
+**两个 env 的速查**（详细 pip 命令见 `docs/ENVS.md`）：
 
 | Env | torch | vLLM | transformers | 占盘 |
 |---|---|---|---|---|
-| `unifiedmlm-legacy` | 2.6.0 cu124 | 0.8.5 | 4.49.0 | ~8 GB |
-| `unifiedmlm-current` | 2.7.0 cu124 | ≥0.10,<0.12 | ≥4.53 | ~8 GB |
-| `unifiedmlm-molmo2` | 2.7.0 cu124 | ≥0.11 | ≥4.54 | ~8 GB |
+| `unifiedmlm-legacy` | 2.6.0+cu124 | 0.8.5 | 4.51.3 | ~13 GB |
+| `unifiedmlm-current` | 2.9.0+cu128 | 0.11.2 | 4.57.6 | ~13 GB |
 
-> 模型权重通过共享 `HF_HOME` 跨 env 共用，**不需要下三遍**。
-> CUDA 12.4 / 12.6 / 12.8 切换办法见 `docs/SETUP.md §10`。
+> 模型权重通过共享 `HF_HOME` 跨 env 共用，**不需要下两遍**。
+> 驱动升级支持 CUDA 13 后，HF backend 的两个模型可以切回 `backend: vllm`。
 
 ---
 

@@ -39,14 +39,16 @@ MOLMO2_OLMO_PROMPT = (
 
 
 class _Molmo2Base(BaseVLMModel):
-    """Shared vLLM init for Molmo 2 variants.
+    """Shared init for Molmo 2 variants.
 
     Subclasses set:
       DEFAULT_MODEL_PATH (HF id)
       PROMPT_TEMPLATE    (chat template with {question} placeholder + <image>)
 
-    Molmo 2 在当前 vLLM release 上需要 hf_overrides 显式告诉它 architecture，
-    否则报 "Unknown architecture"。默认值已经包好；YAML 里 hf_overrides 可覆盖。
+    Backend 选项（config["backend"]）：
+      - "vllm" (default): vLLM 后端；需 vLLM 原生支持 Molmo2 架构或 hf_overrides
+      - "hf":   transformers AutoModelForImageTextToText 后端；不依赖 vLLM 支持。
+              对 driver 锁 CUDA 12 / vLLM 还没合并 Molmo2 的环境是必走通路。
     """
 
     DEFAULT_MODEL_PATH: str = ""
@@ -61,6 +63,13 @@ class _Molmo2Base(BaseVLMModel):
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
+        self._backend = str(self.config.get("backend", "vllm")).lower()
+        if self._backend == "hf":
+            self._init_hf()
+        else:
+            self._init_vllm()
+
+    def _init_vllm(self) -> None:
         from vllm import LLM, SamplingParams
 
         model_path = self.config.get("model_path", self.DEFAULT_MODEL_PATH)
@@ -90,11 +99,40 @@ class _Molmo2Base(BaseVLMModel):
         sampling_cfg.setdefault("max_tokens", 256)
         self._sampling = SamplingParams(**sampling_cfg)
 
+    def _init_hf(self) -> None:
+        import torch
+        from transformers import AutoModelForImageTextToText, AutoProcessor
+
+        model_path = self.config.get("model_path", self.DEFAULT_MODEL_PATH)
+        dtype_name = str(self.config.get("dtype", "bfloat16")).lower()
+        dtype_map = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32, "auto": "auto"}
+        dtype = dtype_map.get(dtype_name, torch.bfloat16)
+        device = self.config.get("device", "cuda:0")
+
+        self._hf_processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+        self._hf_model = AutoModelForImageTextToText.from_pretrained(
+            model_path,
+            trust_remote_code=True,
+            dtype=dtype if dtype != "auto" else None,
+            device_map=device,
+        )
+        self._hf_model.eval()
+        self._hf_device = device
+        self._hf_dtype = next(self._hf_model.parameters()).dtype
+
+        sampling_cfg = dict(self.config.get("sampling") or {})
+        self._hf_max_new_tokens = int(sampling_cfg.get("max_tokens", 256))
+        self._hf_temperature = float(sampling_cfg.get("temperature", 0.0))
+
     def generate(self, requests: Iterable[VLMRequest]) -> list[VLMResponse]:
         reqs = list(requests)
         if not reqs:
             return []
+        if self._backend == "hf":
+            return self._generate_hf(reqs)
+        return self._generate_vllm(reqs)
 
+    def _generate_vllm(self, reqs: list[VLMRequest]) -> list[VLMResponse]:
         vllm_inputs = []
         for r in reqs:
             if len(r.images) != 1:
@@ -121,8 +159,54 @@ class _Molmo2Base(BaseVLMModel):
             )
         return responses
 
+    def _generate_hf(self, reqs: list[VLMRequest]) -> list[VLMResponse]:
+        import torch
+
+        responses: list[VLMResponse] = []
+        do_sample = self._hf_temperature > 0.0
+        gen_kwargs = {"max_new_tokens": self._hf_max_new_tokens, "do_sample": do_sample}
+        if do_sample:
+            gen_kwargs["temperature"] = self._hf_temperature
+
+        # Molmo2 processor 的 batch 支持参差不齐，逐条 generate 最稳。
+        for r in reqs:
+            if len(r.images) != 1:
+                raise ValueError(
+                    f"{self.name} expects exactly 1 image per request, got {len(r.images)}"
+                )
+            messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": r.prompt}]}]
+            try:
+                prompt = self._hf_processor.apply_chat_template(
+                    messages, add_generation_prompt=True, tokenize=False
+                )
+            except Exception:
+                prompt = self.PROMPT_TEMPLATE.format(question=r.prompt)
+
+            inputs = self._hf_processor(images=[r.images[0]], text=prompt, return_tensors="pt")
+            moved: dict[str, Any] = {}
+            for k, v in inputs.items():
+                if torch.is_tensor(v):
+                    if v.is_floating_point():
+                        moved[k] = v.to(self._hf_device).to(self._hf_dtype)
+                    else:
+                        moved[k] = v.to(self._hf_device)
+                else:
+                    moved[k] = v
+
+            with torch.inference_mode():
+                out = self._hf_model.generate(**moved, **gen_kwargs)
+            in_len = moved["input_ids"].shape[-1]
+            gen_tokens = out[0, in_len:]
+            text = self._hf_processor.decode(gen_tokens, skip_special_tokens=True).strip()
+            responses.append(VLMResponse(text=text, metadata={"backend": "hf"}))
+        return responses
+
     def shutdown(self) -> None:
-        self._llm = None
+        if getattr(self, "_backend", "vllm") == "hf":
+            self._hf_model = None
+            self._hf_processor = None
+        else:
+            self._llm = None
 
 
 @register_model("molmo2-8b")

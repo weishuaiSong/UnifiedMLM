@@ -60,7 +60,7 @@ class Qwen3VL(BaseVLMModel):
             gpu_memory_utilization=float(self.config.get("gpu_memory_util", 0.9)),
             dtype=self.config.get("dtype", "auto"),
             trust_remote_code=bool(self.config.get("trust_remote_code", True)),
-            limit_mm_per_prompt={"image": 1},
+            limit_mm_per_prompt={"image": 1, "video": 0},
             mm_processor_kwargs=mm_processor_kwargs or None,
         )
         hf_overrides = self.config.get("hf_overrides")

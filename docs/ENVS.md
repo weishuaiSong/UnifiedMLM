@@ -1,23 +1,26 @@
 # 多环境安装指南
 
-> 为什么分多个 env：新模型对 vLLM / transformers / torch 版本的最低要求不同，硬塞一个 env 容易冲突。下面 3 个 env 覆盖全部 8 个注册模型；CUDA 假设 12.4（驱动支持上限），其它 CUDA 版本参考 `SETUP.md §10` 选 wheel。
+> 为什么分多个 env：新模型对 vLLM / transformers / torch 版本的最低要求不同，硬塞一个 env 容易冲突。
+>
+> **2026-05 实测后简化**：把原计划的 3 个 env 缩到 **2 个**（env-legacy + env-current）。
+> 原 env-C (molmo2) 因为驱动锁 CUDA 12.4 而走不通（详见末尾"踩坑记录"），改用
+> **HF transformers backend** 作为兜底，所以 env-current 一个就能跑全部 5 个新模型。
 
 ---
 
-## 总览：每个模型对应哪个 env
+## 总览：每个模型对应哪个 env / backend
 
-| 模型 | 注册名 | env | 备注 |
-|---|---|---|---|
-| LLaVA-1.5-7B | `llava-1.5-7b` | **env-A (legacy)** | 论文复现基线 |
-| Qwen2.5-VL-7B-Instruct | `qwen2.5-vl-7b` | **env-A (legacy)** | v1.1 cross-arch |
-| LLaVA-OneVision-1.5-8B | `llava-onevision-1.5-8b` | **env-B (current)** | Qwen3 backbone + SigLIP 2 |
-| Qwen3-VL-8B-Instruct | `qwen3-vl-8b` | **env-B (current)** | Qwen3-VL 需要 vLLM ≥ 0.10 |
-| InternVL3.5-8B | `internvl3.5-8b` | **env-B (current)** | 需要 vLLM 支持 InternViT 动态分块 |
-| Molmo2-8B | `molmo2-8b` | **env-C (molmo2)** | Ai2 自定义 processor |
-| Molmo2-O-7B | `molmo2-o-7b` | **env-C (molmo2)** | 同上 |
-| Molmo2-4B | `molmo2-4b` | **env-C (molmo2)** | 同上 |
+| 模型 | 注册名 | env | backend | 备注 |
+|---|---|---|---|---|
+| LLaVA-1.5-7B | `llava-1.5-7b` | **env-A (legacy)** | vLLM 0.8.5 | 论文复现基线 |
+| Qwen2.5-VL-7B-Instruct | `qwen2.5-vl-7b` | **env-A (legacy)** | vLLM 0.8.5 | v1.1 cross-arch |
+| Qwen3-VL-8B-Instruct | `qwen3-vl-8b` | **env-B (current)** | vLLM 0.11.2 | Qwen3-VL 原生支持 |
+| InternVL3.5-8B | `internvl3.5-8b` | **env-B (current)** | vLLM 0.11.2 | InternVLChatModel 原生支持 |
+| LLaVA-OneVision-1.5-8B | `llava-onevision-1.5-8b` | **env-B (current)** | **HF transformers** | vLLM 还没合并新架构，走 `backend: hf` |
+| Molmo2-O-7B | `molmo2-o-7b` | **env-B (current)** | **HF transformers** | 同上，走 `backend: hf` |
+| Molmo2-8B / 4B | `molmo2-8b` / `molmo2-4b` | **env-B (current)** | **HF transformers** | 同 Molmo2-O-7B 模式（未实测，需下载权重） |
 
-**取舍**：3 个 env 占磁盘约 3 × 8 GB（conda env） + 一份共享的 HF 缓存（30–80 GB，看下了几个模型）。
+**取舍**：2 个 env 占磁盘约 2 × 8 GB（conda env） + 一份共享的 HF 缓存（30–80 GB，看下了几个模型）。
 
 ---
 
@@ -76,11 +79,16 @@ unifiedmlm-eval --config configs/eval/llava15_mmbench_subset.yaml
 
 ---
 
-## Env B：current（新一代 vLLM，跑 LLaVA-OV-1.5 / Qwen3-VL / InternVL3.5）
+## Env B：current（vLLM 新版 + HF backend 兜底，跑 5 个新模型）
 
-支持模型：`llava-onevision-1.5-8b`, `qwen3-vl-8b`, `internvl3.5-8b`
+支持模型（vLLM 原生）：`qwen3-vl-8b`, `internvl3.5-8b`
+支持模型（HF transformers backend）：`llava-onevision-1.5-8b`, `molmo2-o-7b`, `molmo2-8b`, `molmo2-4b`
 
-这三个模型都需要较新的 vLLM 才能识别它们的 model arch。
+为什么混 backend：vLLM 0.11.2 已经识别 Qwen3-VL/InternVL3.5 的 arch，但 LLaVA-OV-1.5 的
+`LLaVAOneVision1_5_ForConditionalGeneration`（2025-09 新架构）和 Molmo 2 的
+`Molmo2ForConditionalGeneration`（2025-12 新架构）截至 2026-05 都还没进 vLLM 主线。
+试过升 vLLM 到 0.21.0（已合并 Molmo 2）— 它的 cu13 wheel 在 CUDA-12.4 驱动上跑不起来。
+所以这两个模型走 transformers backend 兜底。
 
 ```bash
 conda create -n unifiedmlm-current python=3.11 -y
@@ -88,111 +96,103 @@ conda activate unifiedmlm-current
 
 pip install --upgrade pip
 
-# vLLM ≥ 0.10 才支持 Qwen3-VL 和 InternVL3.5
-pip install torch==2.7.0 torchvision==0.22.0 \
-    --index-url https://download.pytorch.org/whl/cu124
+# 注意：cu124 channel 上 torch 最高只到 2.6.0；让 vLLM 自己拉合适版本（会装到 cu128 wheel，
+# 在 driver 12.4 上跨次版本兼容）。
 pip install "vllm>=0.10.0,<0.12.0"
 
-# transformers 需要 ≥ 4.53 才识别 Qwen3-VL / InternVL3.5 的 config
-pip install "transformers>=4.53.0" \
-            accelerate \
+# HF backend 依赖：LLaVA-OV-1.5 需要 qwen-vl-utils 处理 vision input。
+# 其他常规依赖。
+pip install qwen-vl-utils \
             sentence-transformers \
             datasets \
             hf-transfer \
-            pyyaml pillow numpy pandas
+            accelerate \
+            pyyaml pillow numpy pandas einops
 
 cd /path/to/UnifiedMLM
 pip install -e .
 ```
 
-**校验**：
+**实测装出来的版本组合（2026-05）**：
+- torch 2.9.0+cu128
+- vllm 0.11.2
+- transformers 4.57.6
+- driver 12.4 上 cu128 wheel forward-compatible，跑通
+
+**校验**（GPU 0，MMBench-subset 100 题）：
 ```bash
 python -c "import vllm, transformers; print(vllm.__version__, transformers.__version__)"
-# 期望：vllm 0.10.x 或 0.11.x；transformers 4.53.x+
 
-# 三个新模型各跑一遍 100 题 sanity
-unifiedmlm-eval --config configs/eval/llava_ov15_mmbench_subset.yaml
-unifiedmlm-eval --config configs/eval/qwen3vl_mmbench_subset.yaml
-unifiedmlm-eval --config configs/eval/internvl3_5_mmbench_subset.yaml
+# vLLM 原生
+unifiedmlm-eval --config configs/eval/qwen3vl_mmbench_subset.yaml      # acc=0.96, 6.4s
+unifiedmlm-eval --config configs/eval/internvl3_5_mmbench_subset.yaml  # acc=0.90, 17.1s
+
+# HF backend（YAML 里 backend: hf 已经预设）
+unifiedmlm-eval --config configs/eval/llava_ov15_mmbench_subset.yaml   # acc=0.99, 10.9s
+unifiedmlm-eval --config configs/eval/molmo2_o_7b_mmbench_subset.yaml  # acc=0.96, 16.5s
 ```
 
 **已知潜在坑**：
 - InternVL3.5 的 `max_dynamic_patch` 默认 12 会产生 ~3000 visual tokens；OOM 时降到 6
-- Qwen3-VL 的 `max_pixels` 默认很高（参考 Qwen2.5-VL 一节）；OOM 时降到 ~1003520
+- Qwen3-VL 的 `max_pixels` 默认很高；OOM 时降到 `1003520`（约 1280×784）
+- vLLM 给 Qwen-VL family profiling 时会预留 video encoder cache（4 dummy video）→ 24G 卡
+  KV cache OOM。`qwen2_5_vl.py` / `qwen3_vl.py` 里 `limit_mm_per_prompt={"image": 1, "video": 0}`
+  显式禁掉
+- HF backend 必须 `dtype: bfloat16` 加载，fp32 撑爆 24G 卡（Molmo2-O-7B fp32 = 28G）
 
 ---
 
-## Env C：molmo2（Ai2 Molmo 2 系列，2025-12 发布）
+## HF transformers backend 说明（v0.1.1 新增）
 
-支持模型：`molmo2-8b`, `molmo2-o-7b`, `molmo2-4b`
+两个 wrapper（`llava_onevision15.py` / `molmo2.py`）现在支持 `backend` config key：
 
-Molmo 系列在 vLLM 上的支持长期跟 transformers 节奏不一致。2026-05 时 vLLM 已经 merge 了 Molmo 2 PR，但版本要求比 env-B 还激进；同时 Molmo 自带 custom processor，需要 `trust_remote_code=True`。
-
-```bash
-conda create -n unifiedmlm-molmo2 python=3.11 -y
-conda activate unifiedmlm-molmo2
-
-pip install --upgrade pip
-
-# Molmo 2 需要更新的 vLLM；用最新 release（或 nightly 如有需要）
-pip install torch==2.7.0 torchvision==0.22.0 \
-    --index-url https://download.pytorch.org/whl/cu124
-pip install "vllm>=0.11.0"
-
-# Molmo 2 processor 需要 transformers 4.54+
-pip install "transformers>=4.54.0" \
-            "tokenizers>=0.21.0" \
-            accelerate \
-            sentence-transformers \
-            datasets \
-            hf-transfer \
-            einops \
-            pyyaml pillow numpy pandas
-
-cd /path/to/UnifiedMLM
-pip install -e .
-```
-
-**校验**：
-```bash
-python -c "import vllm, transformers; print(vllm.__version__, transformers.__version__)"
-# 期望：vllm 0.11.x+；transformers 4.54.x+
-
-unifiedmlm-eval --config configs/eval/molmo2_8b_mmbench_subset.yaml
-```
-
-**关于 `hf_overrides`**：vLLM 当前 release 加载 Molmo 2 时需要显式告诉它架构名。**这个 default 已经包在 `molmo2.py` 里了**（`DEFAULT_HF_OVERRIDES`），开箱即用，不用动。
-
-若未来 vLLM 原生识别 Molmo 2，可在 YAML 显式关掉 default：
 ```yaml
+# Molmo2-O-7B（默认走 HF）
 model:
-  name: molmo2-8b
+  name: molmo2-o-7b
   config:
-    hf_overrides: null    # 关掉 default override
-```
+    backend: hf            # "vllm" | "hf"
+    model_path: allenai/Molmo2-O-7B
+    dtype: bfloat16        # 24G 卡必须
+    device: cuda:0
+    sampling:
+      temperature: 0.0
+      max_tokens: 128
 
-或者覆盖成自定义值：
-```yaml
+# LLaVA-OV-1.5（默认走 HF）
 model:
+  name: llava-onevision-1.5-8b
   config:
-    hf_overrides:
-      architectures: ["Molmo2ForConditionalGeneration"]
-      is_mm_prefix_lm: false
+    backend: hf
+    model_path: lmms-lab/LLaVA-OneVision-1.5-8B-Instruct
+    dtype: bfloat16
+    device: cuda:0
+    sampling:
+      temperature: 0.0
+      max_tokens: 128
 ```
 
-所有 8 个 wrapper 都支持读 `hf_overrides` config key，Molmo 2 之外的模型默认不传（保持原行为）。
+实现细节：
+- LLaVA-OV-1.5 走 `AutoModelForCausalLM` + `qwen_vl_utils.process_vision_info`（HF 卡描述
+  里推荐的方式），processor 自动加载 `Qwen2_5_VLProcessor`
+- Molmo 2 走 `AutoModelForImageTextToText`（auto_map 里就是这个 Auto class）；
+  `Molmo2Processor` 的 batch 支持参差不齐，所以逐条 generate
+- 未来 vLLM 主线合并这两个架构后，把 YAML 的 `backend` 改成 `vllm` 即可秒切
 
-**fallback**：如果 vLLM 跑不起来 Molmo 2，临时用 transformers backend：
-```bash
-# 加装 transformers 推理依赖
-pip install bitsandbytes  # 可选量化
-# 然后改 UnifiedMLM 里 molmo2.py 用 transformers.AutoModelForCausalLM 走 HF generate
-# （TODO：当前 wrapper 是 vLLM 专用；HF backend 是 v0.2 工作）
-```
+---
 
-**已知坑**：
-- Molmo2-O-7B 的 chat template 跟 Qwen3 backbone 不同（用 `<|user|>` / `<|assistant|>`）；`molmo2.py` 已经分开处理
-- Olmo 词表与 Qwen 完全不同，tokenizer 不能复用
+## 踩坑记录（为啥放弃 env-molmo2）
+
+| 尝试 | 结果 |
+|---|---|
+| vLLM 0.11.2 + Molmo2 (fallback TransformersMultiModal) | `Molmo2Processor` 缺 `_get_num_multimodal_tokens` API |
+| vLLM 0.12.0 + Molmo2 | arch `Molmo2ForConditionalGeneration` 还没合并 |
+| vLLM 0.16.0 + Molmo2 | arch 已合并；`import vllm.distributed.kv_transfer` 包初始化时 SIGSEGV（C++ 层，faulthandler 抓不到栈）。怀疑 cu128 wheel 在 driver 12.4 上的边界 bug |
+| vLLM 0.21.0 + Molmo2 | arch 完美识别；但带 torch 2.11+cu130 → "driver too old (found 12040)" |
+| **HF transformers backend** | **✅ 通过，acc=0.96** |
+
+驱动锁死 CUDA 12.4 时，没有现成 vLLM 版本能同时满足"Molmo 2 原生支持 + cu12 torch wheel"。
+等 vLLM 出 cu12 wheel 的 Molmo 2 支持，或机器驱动升级，再切回 `backend: vllm`。
 
 ---
 
@@ -238,18 +238,21 @@ ummm() {
   export HF_HUB_ENABLE_HF_TRANSFER=1
   cd ~/UnifiedMLM
 }
-# 用法：ummm legacy / ummm current / ummm molmo2
+# 用法：ummm legacy / ummm current
 ```
+
+> ⚠️ **TRANSFORMERS_CACHE 陷阱**：如果 `~/.bashrc` 里有 `export TRANSFORMERS_CACHE=...`
+> 且指向跟 `HF_HOME/hub` 不同的目录，transformers 会优先用前者，找不到 vLLM 下到 `HF_HOME`
+> 的模型权重。建议删掉这一行，只保留 `HF_HOME`。临时绕过：运行 eval 前 `unset TRANSFORMERS_CACHE`。
 
 ---
 
-## 版本依赖矩阵（速查）
+## 版本依赖矩阵（速查，2026-05 实测）
 
 | Env | Python | torch | vLLM | transformers | 支持模型 |
 |---|---|---|---|---|---|
-| legacy | 3.11 | 2.6.0 cu124 | 0.8.5 | 4.49.0 | LLaVA-1.5, Qwen2.5-VL |
-| current | 3.11 | 2.7.0 cu124 | ≥0.10,<0.12 | ≥4.53 | LLaVA-OV-1.5, Qwen3-VL, InternVL3.5 |
-| molmo2 | 3.11 | 2.7.0 cu124 | ≥0.11 | ≥4.54 | Molmo2-8B/7B-Olmo/4B |
+| legacy | 3.11 | 2.6.0+cu124 | 0.8.5 | 4.51.3 | LLaVA-1.5, Qwen2.5-VL |
+| current | 3.11 | 2.9.0+cu128 | 0.11.2 | 4.57.6 | Qwen3-VL, InternVL3.5（vLLM）+ LLaVA-OV-1.5, Molmo2-*（HF backend）|
 
 ---
 
@@ -257,20 +260,23 @@ ummm() {
 
 | 现象 | 排查 |
 |---|---|
-| `Unknown model class 'Qwen3VLForConditionalGeneration'` | env 用错了——这个 arch 只有 env-B 的 vLLM 认识 |
-| `Unknown model class 'Molmo2ForCausalLM'` | 切到 env-molmo2 |
-| `transformers` 不识别新 config | 升级 transformers 到对应 env 的最低版 |
-| `CUDA out of memory` | 降 `gpu_memory_util` → 0.85；降 batch_size；新模型同时降 `max_pixels` 或 `max_dynamic_patch` |
-| Molmo 2 起不来 | vLLM 版本可能太老；先试 `pip install -U vllm`，仍不行则参考 fallback 一节走 transformers backend |
-| 三个 env 装下来磁盘紧 | 共享 HF_HOME 是关键；conda env 本身 ~8 GB 一个，可接受 |
+| `Unknown model class 'Qwen3VLForConditionalGeneration'` | env 用错了——这个 arch 只有 env-current 的 vLLM 认识 |
+| `Model architectures ['LLaVAOneVision1_5_ForConditionalGeneration'] are not supported` | YAML 里加 `backend: hf`（vLLM 还没合并这个 arch）|
+| `Model architectures ['Molmo2ForConditionalGeneration'] are not supported` | 同上，`backend: hf` |
+| `Unrecognized configuration class ... for AutoModelForCausalLM` | Molmo 2 走 `AutoModelForImageTextToText`，wrapper 已经处理；如果是自己 import，注意用对 Auto class |
+| `OSError: We couldn't connect to 'https://hf-mirror.com' ... and couldn't find them in the cached files` | 你 `~/.bashrc` 里 TRANSFORMERS_CACHE 指错了。`unset TRANSFORMERS_CACHE` 后重试 |
+| `CUDA out of memory` | 降 `gpu_memory_util` → 0.85；降 batch_size；新模型同时降 `max_pixels` 或 `max_dynamic_patch`；HF backend 确保 `dtype: bfloat16` |
+| `KV cache memory ... is larger than available` (Qwen-VL) | 已修：wrapper 显式 `limit_mm_per_prompt={"image": 1, "video": 0}` 禁掉 video profiling |
+| `driver too old (found 12040)` | torch wheel 是 cu13 build，跟 driver 12.4 不兼容。换 cu12 wheel 的 vLLM（≤0.16） |
+| 两个 env 装下来磁盘紧 | 共享 HF_HOME 是关键；conda env 本身 ~8 GB 一个，可接受 |
 
 ---
 
 ## 一句话总结
 
-**装 3 个 env，共享一个 HF 缓存**：
+**2 个 env，共享一个 HF 缓存**：
 - `unifiedmlm-legacy` ← LLaVA-1.5 + Qwen2.5-VL（论文复现）
-- `unifiedmlm-current` ← LLaVA-OV-1.5 + Qwen3-VL + InternVL3.5（v1.2 主阵容）
-- `unifiedmlm-molmo2` ← Molmo 2 全家（cross-arch 关键）
+- `unifiedmlm-current` ← 其它 5 个新模型（vLLM 原生 2 个 + HF backend 3 个 family）
 
 切换用 `conda activate unifiedmlm-<name>`，剩下的 UnifiedMLM 代码和 config 完全通用。
+驱动升级到支持 CUDA 13 后，可以把 HF backend 的两个模型切回 `backend: vllm`。

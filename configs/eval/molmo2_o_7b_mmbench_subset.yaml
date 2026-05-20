@@ -1,12 +1,17 @@
 # Eval Molmo2-O-7B (Olmo3-7B-Instruct backbone) on shijianS01/mmbench-subset.
 # 关键 cross-arch 模型：当前阵容里唯一非 Qwen-family LM + 完全开放训练数据。
+#
+# Backend 说明：
+#   vLLM 主线还没合并 Molmo2 + 当前驱动只到 CUDA 12.4 → vLLM 0.21 cu13 wheel 跑不起来。
+#   走 transformers backend (backend: hf)，env-current (vllm 0.11.2 + transformers 4.57)
+#   就够用；推理速度比 vLLM 慢但小数据集评测足够。
 model:
   name: molmo2-o-7b
   config:
+    backend: hf
     model_path: allenai/Molmo2-O-7B
-    tensor_parallel: 1
-    max_model_len: 8192
-    gpu_memory_util: 0.9
+    dtype: bfloat16          # 24GB 卡装不下 fp32（28 GB），强制 bf16
+    device: cuda:0
     sampling:
       temperature: 0.0
       max_tokens: 128
@@ -22,5 +27,6 @@ extractor:
   sim_threshold: 0.5
   sentence_model: sentence-transformers/all-MiniLM-L6-v2
 
-batch_size: 16
+# HF backend 逐条 generate；batch_size 仅用于 benchmark dataloader 分块大小。
+batch_size: 4
 output_dir: outputs/molmo2_o_7b_mmbench_subset

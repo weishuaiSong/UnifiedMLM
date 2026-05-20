@@ -1,11 +1,17 @@
 # Eval LLaVA-OneVision-1.5-8B-Instruct on shijianS01/mmbench-subset (100 samples).
+#
+# Backend 说明：
+#   vLLM 主线还没合并 LLaVAOneVision1_5_ForConditionalGeneration（截至 2026-05
+#   vLLM 0.11.2 不识别该架构）。走 transformers backend (backend: hf)，env-current
+#   就够用；推理速度比 vLLM 慢但小数据集评测足够。
+#   依赖：pip install qwen-vl-utils（已在 env-current 安装）。
 model:
   name: llava-onevision-1.5-8b
   config:
+    backend: hf
     model_path: lmms-lab/LLaVA-OneVision-1.5-8B-Instruct
-    tensor_parallel: 1
-    max_model_len: 8192
-    gpu_memory_util: 0.9
+    dtype: bfloat16
+    device: cuda:0
     sampling:
       temperature: 0.0
       max_tokens: 128
@@ -21,5 +27,6 @@ extractor:
   sim_threshold: 0.5
   sentence_model: sentence-transformers/all-MiniLM-L6-v2
 
-batch_size: 16
+# HF backend 逐条 generate；batch_size 仅用于 benchmark dataloader 分块大小。
+batch_size: 4
 output_dir: outputs/llava_ov15_mmbench_subset
