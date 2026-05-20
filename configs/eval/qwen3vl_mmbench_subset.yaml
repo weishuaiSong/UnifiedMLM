@@ -1,0 +1,27 @@
+# Eval Qwen3-VL-8B-Instruct on shijianS01/mmbench-subset (100 samples).
+model:
+  name: qwen3-vl-8b
+  config:
+    model_path: Qwen/Qwen3-VL-8B-Instruct
+    tensor_parallel: 1
+    max_model_len: 16384
+    gpu_memory_util: 0.9
+    # Cap visual tokens to keep batch_size=16 from OOMing on 40G cards.
+    max_pixels: 1003520
+    sampling:
+      temperature: 0.0
+      max_tokens: 128
+
+benchmark:
+  name: mmbench
+  config:
+    hf_path: shijianS01/mmbench-subset
+    hf_name: default
+    split: eval
+
+extractor:
+  sim_threshold: 0.5
+  sentence_model: sentence-transformers/all-MiniLM-L6-v2
+
+batch_size: 16
+output_dir: outputs/qwen3vl_mmbench_subset

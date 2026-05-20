@@ -5,7 +5,10 @@
 vllm==0.8.5
 torch==2.6.0
 torchvision==0.21.0
-transformers>=4.45.0
+# vLLM 0.8.5 is built against transformers 4.5x; 4.52+ and 5.x break model import.
+transformers==4.51.3
+tokenizers>=0.21,<0.22
+mistral_common==1.5.4
 accelerate>=0.34.0
 
 # Multimodal data

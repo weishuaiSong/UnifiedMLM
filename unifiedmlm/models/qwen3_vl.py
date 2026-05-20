@@ -1,7 +1,13 @@
-"""LLaVA-1.5 (HF weights) served by vLLM.
+"""Qwen3-VL-8B-Instruct served by vLLM.
 
-Reference prompt format for llava-hf/llava-1.5-7b-hf:
-    "USER: <image>\n{question}\nASSISTANT:"
+HF: Qwen/Qwen3-VL-8B-Instruct (dense; released 2025).
+Chat template is the same Qwen-VL form as Qwen2.5-VL, with vision markers:
+
+    <|im_start|>system
+    You are a helpful assistant.<|im_end|>
+    <|im_start|>user
+    <|vision_start|><|image_pad|><|vision_end|>{question}<|im_end|>
+    <|im_start|>assistant
 """
 from __future__ import annotations
 
@@ -11,38 +17,51 @@ from .base import BaseVLMModel, VLMRequest, VLMResponse
 from .registry import register_model
 
 
-LLAVA_15_PROMPT = "USER: <image>\n{question}\nASSISTANT:"
+QWEN3_VL_PROMPT = (
+    "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+    "<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>{question}<|im_end|>\n"
+    "<|im_start|>assistant\n"
+)
 
 
-@register_model("llava-1.5-7b")
-class LLaVA15(BaseVLMModel):
-    """LLaVA-1.5-7B wrapper over vLLM.
+@register_model("qwen3-vl-8b")
+class Qwen3VL(BaseVLMModel):
+    """Qwen3-VL-8B-Instruct wrapper over vLLM.
 
     Config keys:
-      model_path:        HF repo or local path (default: llava-hf/llava-1.5-7b-hf)
+      model_path:        HF repo or local path (default: Qwen/Qwen3-VL-8B-Instruct)
       tensor_parallel:   int, default 1
-      max_model_len:     int, default 4096
+      max_model_len:     int, default 16384 (Qwen3-VL extends context vs Qwen2.5-VL)
       gpu_memory_util:   float, default 0.9
       dtype:             str, default "auto"
-      sampling:          dict passed to vllm.SamplingParams (temperature, top_p, max_tokens, ...)
+      max_pixels:        int, optional. Caps visual tokens by limiting the image
+                         resolution Qwen3-VL's dynamic-resolution preprocessor
+                         accepts. None = use processor default.
+                         Set lower (e.g. 1003520) to reduce KV cache pressure.
+      sampling:          dict passed to vllm.SamplingParams.
     """
 
-    DEFAULT_MODEL_PATH = "llava-hf/llava-1.5-7b-hf"
+    DEFAULT_MODEL_PATH = "Qwen/Qwen3-VL-8B-Instruct"
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
-        # Imported lazily so the package can be inspected without vLLM installed.
         from vllm import LLM, SamplingParams
 
         model_path = self.config.get("model_path", self.DEFAULT_MODEL_PATH)
+        mm_processor_kwargs: dict[str, Any] = {}
+        max_pixels = self.config.get("max_pixels")
+        if max_pixels is not None:
+            mm_processor_kwargs["max_pixels"] = int(max_pixels)
+
         llm_kwargs: dict[str, Any] = dict(
             model=model_path,
             tensor_parallel_size=int(self.config.get("tensor_parallel", 1)),
-            max_model_len=int(self.config.get("max_model_len", 4096)),
+            max_model_len=int(self.config.get("max_model_len", 16384)),
             gpu_memory_utilization=float(self.config.get("gpu_memory_util", 0.9)),
             dtype=self.config.get("dtype", "auto"),
-            trust_remote_code=bool(self.config.get("trust_remote_code", False)),
+            trust_remote_code=bool(self.config.get("trust_remote_code", True)),
             limit_mm_per_prompt={"image": 1},
+            mm_processor_kwargs=mm_processor_kwargs or None,
         )
         hf_overrides = self.config.get("hf_overrides")
         if hf_overrides:
@@ -62,9 +81,9 @@ class LLaVA15(BaseVLMModel):
         for r in reqs:
             if len(r.images) != 1:
                 raise ValueError(
-                    f"LLaVA-1.5 expects exactly 1 image per request, got {len(r.images)}"
+                    f"Qwen3-VL expects exactly 1 image per request, got {len(r.images)}"
                 )
-            prompt = LLAVA_15_PROMPT.format(question=r.prompt)
+            prompt = QWEN3_VL_PROMPT.format(question=r.prompt)
             vllm_inputs.append(
                 {
                     "prompt": prompt,
@@ -76,9 +95,13 @@ class LLaVA15(BaseVLMModel):
         responses: list[VLMResponse] = []
         for out in outputs:
             text = out.outputs[0].text.strip() if out.outputs else ""
-            responses.append(VLMResponse(text=text, metadata={"finish_reason": out.outputs[0].finish_reason if out.outputs else None}))
+            responses.append(
+                VLMResponse(
+                    text=text,
+                    metadata={"finish_reason": out.outputs[0].finish_reason if out.outputs else None},
+                )
+            )
         return responses
 
     def shutdown(self) -> None:
-        # vLLM cleans up on GC; nothing extra here for now.
         self._llm = None

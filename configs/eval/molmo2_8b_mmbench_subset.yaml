@@ -1,0 +1,25 @@
+# Eval Molmo2-8B (Qwen3-8B backbone + SigLIP 2) on shijianS01/mmbench-subset.
+model:
+  name: molmo2-8b
+  config:
+    model_path: allenai/Molmo2-8B
+    tensor_parallel: 1
+    max_model_len: 8192
+    gpu_memory_util: 0.9
+    sampling:
+      temperature: 0.0
+      max_tokens: 128
+
+benchmark:
+  name: mmbench
+  config:
+    hf_path: shijianS01/mmbench-subset
+    hf_name: default
+    split: eval
+
+extractor:
+  sim_threshold: 0.5
+  sentence_model: sentence-transformers/all-MiniLM-L6-v2
+
+batch_size: 16
+output_dir: outputs/molmo2_8b_mmbench_subset

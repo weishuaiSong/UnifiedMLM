@@ -1,0 +1,26 @@
+# Eval Molmo2-O-7B (Olmo3-7B-Instruct backbone) on shijianS01/mmbench-subset.
+# 关键 cross-arch 模型：当前阵容里唯一非 Qwen-family LM + 完全开放训练数据。
+model:
+  name: molmo2-o-7b
+  config:
+    model_path: allenai/Molmo2-O-7B
+    tensor_parallel: 1
+    max_model_len: 8192
+    gpu_memory_util: 0.9
+    sampling:
+      temperature: 0.0
+      max_tokens: 128
+
+benchmark:
+  name: mmbench
+  config:
+    hf_path: shijianS01/mmbench-subset
+    hf_name: default
+    split: eval
+
+extractor:
+  sim_threshold: 0.5
+  sentence_model: sentence-transformers/all-MiniLM-L6-v2
+
+batch_size: 16
+output_dir: outputs/molmo2_o_7b_mmbench_subset
