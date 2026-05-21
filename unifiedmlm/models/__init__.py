@@ -8,6 +8,11 @@ from . import llava_onevision15  # noqa: F401
 from . import qwen3_vl  # noqa: F401
 from . import molmo2  # noqa: F401
 from . import internvl3_5  # noqa: F401
+from . import pixtral  # noqa: F401
+from . import deepseek_vl2  # noqa: F401
+from . import glm4v  # noqa: F401
+from . import phi4_mm  # noqa: F401
+from . import kimi_vl  # noqa: F401
 
 __all__ = [
     "BaseVLMModel",

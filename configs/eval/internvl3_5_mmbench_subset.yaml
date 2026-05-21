@@ -4,7 +4,7 @@ model:
   config:
     model_path: OpenGVLab/InternVL3_5-8B
     tensor_parallel: 1
-    max_model_len: 16384
+    max_model_len: 8192      # 24G 卡上 16384 KV cache 偏紧；mmbench 任务 prompt 短 8192 足够
     gpu_memory_util: 0.9
     # Cap visual tokens via dynamic patching (default 12 in HF processor).
     # Lower → fewer tokens, less KV pressure.

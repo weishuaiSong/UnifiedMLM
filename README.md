@@ -9,38 +9,41 @@ This repo is the engineering backbone for the template-scaling work in
 experiment (Scaling-Law, Test-Train Distance, Local Competition, …) reports
 numbers that are directly comparable.
 
-> Current status: **v0.1.0** — vLLM eval line, 8 models wired up
-> (LLaVA-1.5-7B, Qwen2.5-VL-7B, LLaVA-OneVision-1.5-8B, Qwen3-VL-8B,
-> Molmo2-8B, Molmo2-O-7B, Molmo2-4B, InternVL3.5-8B), one benchmark
-> wired up (MMBench-en/dev). Training (LLaMA-Factory) will land in a
-> sibling subtree later.
+> Current status: **v0.2.0** — vLLM + HF-transformers hybrid eval line, **13 models
+> wired up** in a **single uv venv** (LLaVA-1.5-7B, Qwen2.5-VL-7B, Qwen3-VL-8B,
+> InternVL3.5-8B, LLaVA-OneVision-1.5-8B, Pixtral-12B, Molmo2-8B/O-7B/4B,
+> Phi-4-Multimodal, GLM-4V-9B, Kimi-VL-A3B, DeepSeek-VL2-Small).
+> One benchmark wired (MMBench-en/dev). Training (LLaMA-Factory) lands later.
 
 ## ⚡ 环境与模型一览（先看这里）
 
-vLLM 是首选 backend，但 **LLaVA-OV-1.5 / Molmo 2 的新架构截至 2026-05 还没进 vLLM 主线**；
-而能识别它们的 vLLM 0.21+ 又只发 cu13 wheel，跟 CUDA-12.4 驱动不兼容。所以这两个模型走
-**transformers backend** 兜底（wrapper 里 `backend: hf` 一行就切）。最终只需要 **2 个
-conda env**：详见 [`docs/ENVS.md`](docs/ENVS.md)。
+**单 uv venv 通吃所有 13 个模型**：vLLM 0.11.2 + transformers 4.57.6 + torch
+2.9+cu128。能 vLLM 原生支持的走 vLLM，新架构 vLLM 还没合并的（LLaVA-OV-1.5、
+Molmo2、Pixtral 大模型等）走 HF transformers backend 兜底（wrapper 里 `backend: hf`
+一行就切）。完整安装步骤见 [`docs/ENVS.md`](docs/ENVS.md)。
 
-| 模型 | 注册名 | env | backend | MMBench-subset acc |
+```bash
+uv venv .venv --python 3.11 && uv pip install -e .
+```
+
+### Backend / 卡数
+
+| 模型 | 注册名 | Backend | 单卡 24G | MMBench-subset acc |
 |---|---|---|---|---|
-| LLaVA-1.5-7B | `llava-1.5-7b` | `unifiedmlm-legacy` | vLLM 0.8.5 | — |
-| Qwen2.5-VL-7B-Instruct | `qwen2.5-vl-7b` | `unifiedmlm-legacy` | vLLM 0.8.5 | 0.90 |
-| Qwen3-VL-8B-Instruct | `qwen3-vl-8b` | `unifiedmlm-current` | vLLM 0.11.2 | 0.96 |
-| InternVL3.5-8B | `internvl3.5-8b` | `unifiedmlm-current` | vLLM 0.11.2 | 0.90 |
-| LLaVA-OneVision-1.5-8B | `llava-onevision-1.5-8b` | `unifiedmlm-current` | **HF transformers** | 0.99 |
-| Molmo2-O-7B | `molmo2-o-7b` | `unifiedmlm-current` | **HF transformers** | 0.96 |
-| Molmo2-8B / 4B | `molmo2-8b` / `molmo2-4b` | `unifiedmlm-current` | **HF transformers** | (同上模式，待测) |
+| LLaVA-1.5-7B | `llava-1.5-7b` | vLLM | 1 | — |
+| Qwen2.5-VL-7B | `qwen2.5-vl-7b` | vLLM | 1 | 0.90 |
+| Qwen3-VL-8B | `qwen3-vl-8b` | vLLM | 1 | 0.96 |
+| InternVL3.5-8B | `internvl3.5-8b` | vLLM | 1 | 0.90 |
+| Phi-4 Multimodal | `phi-4-multimodal` | vLLM | 1 | 0.71 |
+| LLaVA-OV-1.5-8B | `llava-onevision-1.5-8b` | HF | 1 | 0.99 |
+| Molmo2-O-7B | `molmo2-o-7b` | HF | 1 | 0.96 |
+| Pixtral-12B | `pixtral-12b` | HF, `device_map=auto` | **2** | 0.89 |
+| GLM-4V-9B | `glm-4v-9b` | HF, `device_map=auto` | **2** | 1.00 |
+| Kimi-VL-A3B | `kimi-vl-a3b` | HF, `device_map=auto` | **2** | 0.97 |
+| DeepSeek-VL2-Small | `deepseek-vl2-small` | vLLM TP=2 (待 fix) | 2 | (vLLM 0.11.2 bug) |
+| Molmo2-8B / 4B | `molmo2-8b` / `molmo2-4b` | HF | 1 | (未下载权重) |
 
-**两个 env 的速查**（详细 pip 命令见 `docs/ENVS.md`）：
-
-| Env | torch | vLLM | transformers | 占盘 |
-|---|---|---|---|---|
-| `unifiedmlm-legacy` | 2.6.0+cu124 | 0.8.5 | 4.51.3 | ~13 GB |
-| `unifiedmlm-current` | 2.9.0+cu128 | 0.11.2 | 4.57.6 | ~13 GB |
-
-> 模型权重通过共享 `HF_HOME` 跨 env 共用，**不需要下两遍**。
-> 驱动升级支持 CUDA 13 后，HF backend 的两个模型可以切回 `backend: vllm`。
+> 模型权重通过共享 `HF_HOME` 缓存，cross-backend / cross-model 复用。
 
 ---
 
@@ -81,26 +84,43 @@ UnifiedMLM/
 └── README.md
 ```
 
-## 2. Install
+## 2. Install (uv venv, single environment)
 
 ```bash
-# inside a fresh CUDA-enabled env (Python ≥ 3.10)
-pip install -r requirements.txt
-pip install -e .
+# 1. 装 uv（任选一种）
+pip install uv                                  # 推荐：装到 conda base 或系统 python
+# 或：curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. 创建 venv + 装本项目（含 vLLM 0.11.2 + torch 2.9+cu128 + transformers 4.57）
+uv venv .venv --python 3.11
+uv pip install -e .
+
+# 3. 验证
+.venv/bin/python -c "import vllm, transformers; print(vllm.__version__, transformers.__version__)"
+.venv/bin/unifiedmlm-eval --list
 ```
 
-vLLM brings its own torch wheel; if you have a pinned CUDA, follow the
-[vLLM install guide](https://docs.vllm.ai/en/latest/getting_started/installation.html).
+`pyproject.toml` 里 `[tool.uv.sources]` 已经把 PyTorch index 指到 cu128 build
+（forward-compatible with CUDA 12.4 driver）；不需要手工指定 `--index`。
+
+详见 [`docs/ENVS.md`](docs/ENVS.md)。
 
 ## 3. Smoke test (100 samples)
 
 ```bash
-unifiedmlm-eval \
-  --model llava-1.5-7b \
-  --benchmark mmbench \
-  --limit 100 \
-  --batch-size 16 \
-  --output-dir outputs/smoke_llava15_mmbench
+source .venv/bin/activate                       # 或 .venv/bin/unifiedmlm-eval
+
+# 单卡 vLLM 模型
+CUDA_VISIBLE_DEVICES=0 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+  unifiedmlm-eval --config configs/eval/qwen3vl_mmbench_subset.yaml
+
+# 多卡 HF backend 模型（跨 GPU 2+3）
+CUDA_VISIBLE_DEVICES=2,3 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+  unifiedmlm-eval --config configs/eval/pixtral12b_mmbench_subset.yaml
+
+# 或 ad-hoc 不带 YAML
+unifiedmlm-eval --model llava-1.5-7b --benchmark mmbench --limit 100 \
+  --batch-size 16 --output-dir outputs/smoke_llava15_mmbench
 ```
 
 Output:

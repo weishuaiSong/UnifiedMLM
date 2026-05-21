@@ -1,0 +1,27 @@
+# Eval GLM-4V-9B (智谱 ChatGLM4 + EVA-CLIP-E) on shijianS01/mmbench-subset.
+# 9B + fp32 存储的 weights → 单卡 cast 峰值撑爆 24G；走 HF backend + device_map="auto"。
+model:
+  name: glm-4v-9b
+  config:
+    backend: hf
+    model_path: THUDM/glm-4v-9b
+    dtype: bfloat16
+    device_map: auto
+    sampling:
+      temperature: 0.0
+      max_tokens: 128
+
+benchmark:
+  name: mmbench
+  config:
+    hf_path: shijianS01/mmbench-subset
+    hf_name: default
+    split: eval
+
+extractor:
+  sim_threshold: 0.5
+  sentence_model: sentence-transformers/all-MiniLM-L6-v2
+
+# HF backend 逐条 generate。
+batch_size: 4
+output_dir: outputs/glm4v_9b_mmbench_subset

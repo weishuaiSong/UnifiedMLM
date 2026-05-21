@@ -1,282 +1,159 @@
-# 多环境安装指南
+# 环境安装指南（uv 单 venv 版）
 
-> 为什么分多个 env：新模型对 vLLM / transformers / torch 版本的最低要求不同，硬塞一个 env 容易冲突。
+> 2026-05 重写：原来的 2~3 个 conda env 全部收敛到**一个 uv venv**。所有 13 个
+> 模型的 wrapper（含 vLLM 原生 + HF transformers backend 兜底）都在同一份依赖里
+> 工作；不需要按模型切环境。
 >
-> **2026-05 实测后简化**：把原计划的 3 个 env 缩到 **2 个**（env-legacy + env-current）。
-> 原 env-C (molmo2) 因为驱动锁 CUDA 12.4 而走不通（详见末尾"踩坑记录"），改用
-> **HF transformers backend** 作为兜底，所以 env-current 一个就能跑全部 5 个新模型。
+> 历史背景见末尾"为什么不再用 conda 多 env"。
 
 ---
 
-## 总览：每个模型对应哪个 env / backend
+## 0. 前置要求
 
-| 模型 | 注册名 | env | backend | 备注 |
-|---|---|---|---|---|
-| LLaVA-1.5-7B | `llava-1.5-7b` | **env-A (legacy)** | vLLM 0.8.5 | 论文复现基线 |
-| Qwen2.5-VL-7B-Instruct | `qwen2.5-vl-7b` | **env-A (legacy)** | vLLM 0.8.5 | v1.1 cross-arch |
-| Qwen3-VL-8B-Instruct | `qwen3-vl-8b` | **env-B (current)** | vLLM 0.11.2 | Qwen3-VL 原生支持 |
-| InternVL3.5-8B | `internvl3.5-8b` | **env-B (current)** | vLLM 0.11.2 | InternVLChatModel 原生支持 |
-| LLaVA-OneVision-1.5-8B | `llava-onevision-1.5-8b` | **env-B (current)** | **HF transformers** | vLLM 还没合并新架构，走 `backend: hf` |
-| Molmo2-O-7B | `molmo2-o-7b` | **env-B (current)** | **HF transformers** | 同上，走 `backend: hf` |
-| Molmo2-8B / 4B | `molmo2-8b` / `molmo2-4b` | **env-B (current)** | **HF transformers** | 同 Molmo2-O-7B 模式（未实测，需下载权重） |
-
-**取舍**：2 个 env 占磁盘约 2 × 8 GB（conda env） + 一份共享的 HF 缓存（30–80 GB，看下了几个模型）。
-
----
-
-## 通用前置（每个 env 都要做一次）
-
-```bash
-# 0.1 mirror & 缓存（写进 ~/.bashrc 或每次 source）
-export HF_ENDPOINT=https://hf-mirror.com
-export HF_HOME=/data/hf_cache              # 改成你机器上的大盘
-export HF_HUB_ENABLE_HF_TRANSFER=1
-```
-
-```bash
-# 0.2 检查 CUDA driver 上限
-nvidia-smi | head -5     # 看 "CUDA Version: 12.x"
-```
-
-下面所有 env 都用 Python 3.11、CUDA 12.4 的 wheel 作为示例。CUDA 12.6/12.8 把 `cu124` 换成 `cu126` / `cu128` 即可。
-
----
-
-## Env A：legacy（已有，跑 LLaVA-1.5 + Qwen2.5-VL）
-
-支持模型：`llava-1.5-7b`, `qwen2.5-vl-7b`
-
-```bash
-conda create -n unifiedmlm-legacy python=3.11 -y
-conda activate unifiedmlm-legacy
-
-pip install --upgrade pip
-
-# torch + vLLM（CUDA 12.4 适配版本，与现 SETUP.md 一致）
-pip install torch==2.6.0 torchvision==0.21.0 \
-    --index-url https://download.pytorch.org/whl/cu124
-pip install vllm==0.8.5
-
-# 框架依赖
-pip install transformers==4.49.0 \
-            accelerate==1.2.0 \
-            sentence-transformers==3.2.1 \
-            datasets==3.1.0 \
-            hf-transfer==0.1.8 \
-            pyyaml pillow numpy pandas
-
-# 装 UnifiedMLM 本体
-cd /path/to/UnifiedMLM
-pip install -e .
-```
-
-**校验**：
-```bash
-python -c "import vllm, transformers; print(vllm.__version__, transformers.__version__)"
-# 期望：0.8.5  4.49.0
-unifiedmlm-eval --config configs/eval/llava15_mmbench_subset.yaml
-```
-
----
-
-## Env B：current（vLLM 新版 + HF backend 兜底，跑 5 个新模型）
-
-支持模型（vLLM 原生）：`qwen3-vl-8b`, `internvl3.5-8b`
-支持模型（HF transformers backend）：`llava-onevision-1.5-8b`, `molmo2-o-7b`, `molmo2-8b`, `molmo2-4b`
-
-为什么混 backend：vLLM 0.11.2 已经识别 Qwen3-VL/InternVL3.5 的 arch，但 LLaVA-OV-1.5 的
-`LLaVAOneVision1_5_ForConditionalGeneration`（2025-09 新架构）和 Molmo 2 的
-`Molmo2ForConditionalGeneration`（2025-12 新架构）截至 2026-05 都还没进 vLLM 主线。
-试过升 vLLM 到 0.21.0（已合并 Molmo 2）— 它的 cu13 wheel 在 CUDA-12.4 驱动上跑不起来。
-所以这两个模型走 transformers backend 兜底。
-
-```bash
-conda create -n unifiedmlm-current python=3.11 -y
-conda activate unifiedmlm-current
-
-pip install --upgrade pip
-
-# 注意：cu124 channel 上 torch 最高只到 2.6.0；让 vLLM 自己拉合适版本（会装到 cu128 wheel，
-# 在 driver 12.4 上跨次版本兼容）。
-pip install "vllm>=0.10.0,<0.12.0"
-
-# HF backend 依赖：LLaVA-OV-1.5 需要 qwen-vl-utils 处理 vision input。
-# 其他常规依赖。
-pip install qwen-vl-utils \
-            sentence-transformers \
-            datasets \
-            hf-transfer \
-            accelerate \
-            pyyaml pillow numpy pandas einops
-
-cd /path/to/UnifiedMLM
-pip install -e .
-```
-
-**实测装出来的版本组合（2026-05）**：
-- torch 2.9.0+cu128
-- vllm 0.11.2
-- transformers 4.57.6
-- driver 12.4 上 cu128 wheel forward-compatible，跑通
-
-**校验**（GPU 0，MMBench-subset 100 题）：
-```bash
-python -c "import vllm, transformers; print(vllm.__version__, transformers.__version__)"
-
-# vLLM 原生
-unifiedmlm-eval --config configs/eval/qwen3vl_mmbench_subset.yaml      # acc=0.96, 6.4s
-unifiedmlm-eval --config configs/eval/internvl3_5_mmbench_subset.yaml  # acc=0.90, 17.1s
-
-# HF backend（YAML 里 backend: hf 已经预设）
-unifiedmlm-eval --config configs/eval/llava_ov15_mmbench_subset.yaml   # acc=0.99, 10.9s
-unifiedmlm-eval --config configs/eval/molmo2_o_7b_mmbench_subset.yaml  # acc=0.96, 16.5s
-```
-
-**已知潜在坑**：
-- InternVL3.5 的 `max_dynamic_patch` 默认 12 会产生 ~3000 visual tokens；OOM 时降到 6
-- Qwen3-VL 的 `max_pixels` 默认很高；OOM 时降到 `1003520`（约 1280×784）
-- vLLM 给 Qwen-VL family profiling 时会预留 video encoder cache（4 dummy video）→ 24G 卡
-  KV cache OOM。`qwen2_5_vl.py` / `qwen3_vl.py` 里 `limit_mm_per_prompt={"image": 1, "video": 0}`
-  显式禁掉
-- HF backend 必须 `dtype: bfloat16` 加载，fp32 撑爆 24G 卡（Molmo2-O-7B fp32 = 28G）
-
----
-
-## HF transformers backend 说明（v0.1.1 新增）
-
-两个 wrapper（`llava_onevision15.py` / `molmo2.py`）现在支持 `backend` config key：
-
-```yaml
-# Molmo2-O-7B（默认走 HF）
-model:
-  name: molmo2-o-7b
-  config:
-    backend: hf            # "vllm" | "hf"
-    model_path: allenai/Molmo2-O-7B
-    dtype: bfloat16        # 24G 卡必须
-    device: cuda:0
-    sampling:
-      temperature: 0.0
-      max_tokens: 128
-
-# LLaVA-OV-1.5（默认走 HF）
-model:
-  name: llava-onevision-1.5-8b
-  config:
-    backend: hf
-    model_path: lmms-lab/LLaVA-OneVision-1.5-8B-Instruct
-    dtype: bfloat16
-    device: cuda:0
-    sampling:
-      temperature: 0.0
-      max_tokens: 128
-```
-
-实现细节：
-- LLaVA-OV-1.5 走 `AutoModelForCausalLM` + `qwen_vl_utils.process_vision_info`（HF 卡描述
-  里推荐的方式），processor 自动加载 `Qwen2_5_VLProcessor`
-- Molmo 2 走 `AutoModelForImageTextToText`（auto_map 里就是这个 Auto class）；
-  `Molmo2Processor` 的 batch 支持参差不齐，所以逐条 generate
-- 未来 vLLM 主线合并这两个架构后，把 YAML 的 `backend` 改成 `vllm` 即可秒切
-
----
-
-## 踩坑记录（为啥放弃 env-molmo2）
-
-| 尝试 | 结果 |
+| 项 | 实测要求 |
 |---|---|
-| vLLM 0.11.2 + Molmo2 (fallback TransformersMultiModal) | `Molmo2Processor` 缺 `_get_num_multimodal_tokens` API |
-| vLLM 0.12.0 + Molmo2 | arch `Molmo2ForConditionalGeneration` 还没合并 |
-| vLLM 0.16.0 + Molmo2 | arch 已合并；`import vllm.distributed.kv_transfer` 包初始化时 SIGSEGV（C++ 层，faulthandler 抓不到栈）。怀疑 cu128 wheel 在 driver 12.4 上的边界 bug |
-| vLLM 0.21.0 + Molmo2 | arch 完美识别；但带 torch 2.11+cu130 → "driver too old (found 12040)" |
-| **HF transformers backend** | **✅ 通过，acc=0.96** |
-
-驱动锁死 CUDA 12.4 时，没有现成 vLLM 版本能同时满足"Molmo 2 原生支持 + cu12 torch wheel"。
-等 vLLM 出 cu12 wheel 的 Molmo 2 支持，或机器驱动升级，再切回 `backend: vllm`。
+| NVIDIA driver | ≥ 550 (CUDA 12.4 forward-compat)，cu128 wheels OK |
+| 显卡 | RTX 4090 24G × N。**单卡能跑的模型**：≤ 9 B fp/bf16；更大走 `device_map="auto"` 跨卡 |
+| Python | 3.11 (uv 自动下载) |
+| 磁盘 | venv ~10 G；HF cache 几十 G 起步，建议放共享盘 |
+| 工具 | `uv`（一行装到 conda base：`pip install uv`） |
 
 ---
 
-## 多 env 协作（共享缓存 + 切换）
-
-### 共享 HF 模型缓存
-
-3 个 env 共用同一份 `HF_HOME=/data/hf_cache`，模型权重下载一次三个 env 都能用。**强烈推荐**，因为模型权重最大头。
+## 1. 装环境
 
 ```bash
-# 在任意一个 env 里把 5 个新模型下到本地（一次性）
-huggingface-cli download lmms-lab/LLaVA-OneVision-1.5-8B-Instruct
-huggingface-cli download Qwen/Qwen3-VL-8B-Instruct
-huggingface-cli download OpenGVLab/InternVL3_5-8B
-huggingface-cli download allenai/Molmo2-8B
-huggingface-cli download allenai/Molmo2-O-7B
-huggingface-cli download allenai/Molmo2-4B
-```
+# 1. 装 uv（任选一种，写入 ~/.local/bin 或 conda base）
+pip install uv                                  # 推荐：装到 conda base
+# 或：curl -LsSf https://astral.sh/uv/install.sh | sh
 
-### 共享 UnifiedMLM 源码
-
-`pip install -e .` 让 3 个 env 都引用同一份代码。改 wrapper 时不用每个 env 重装。
-
-### 切环境的标准节奏
-
-```bash
-# 每次开终端
-conda deactivate
-conda activate unifiedmlm-current   # 或 -legacy / -molmo2
-export HF_ENDPOINT=https://hf-mirror.com
-export HF_HOME=/data/hf_cache
-export HF_HUB_ENABLE_HF_TRANSFER=1
+# 2. 项目目录里创建 venv
 cd /path/to/UnifiedMLM
+uv venv .venv --python 3.11
+
+# 3. 装本项目（含全部依赖）
+uv pip install -e .
+
+# 4. 校验
+.venv/bin/python -c "import torch, vllm, transformers; \
+  print(f'torch {torch.__version__} cuda={torch.cuda.is_available()} | vllm {vllm.__version__} | trf {transformers.__version__}')"
+# 期望（2026-05 锁定）：torch 2.9.0+cu128 / vllm 0.11.2 / trf 4.57.6
 ```
 
-可以写个 shell 函数：
+`pyproject.toml` 里 `[tool.uv.sources]` 已配 PyTorch cu128 index；不用手动加 `--index`。
+
+---
+
+## 2. HF 缓存
+
+所有 backend（vLLM、transformers）共用同一份 `HF_HOME`。
+
 ```bash
-# ~/.bashrc
-ummm() {
-  conda activate "unifiedmlm-$1"
-  export HF_ENDPOINT=https://hf-mirror.com
-  export HF_HOME=/data/hf_cache
-  export HF_HUB_ENABLE_HF_TRANSFER=1
-  cd ~/UnifiedMLM
-}
-# 用法：ummm legacy / ummm current
+# 写进 ~/.bashrc 或 .envrc 之类的
+export HF_HOME=/mnt/sdc/zimuwang/huggingface            # 你机器上的大盘
+export HUGGINGFACE_HUB_CACHE=$HF_HOME/hub
+export HF_DATASETS_CACHE=$HF_HOME/datasets
+export HF_HUB_ENABLE_HF_TRANSFER=1                       # 加速下载
+unset TRANSFORMERS_CACHE                                 # ⚠️ 老陷阱：别保留
 ```
 
-> ⚠️ **TRANSFORMERS_CACHE 陷阱**：如果 `~/.bashrc` 里有 `export TRANSFORMERS_CACHE=...`
-> 且指向跟 `HF_HOME/hub` 不同的目录，transformers 会优先用前者，找不到 vLLM 下到 `HF_HOME`
-> 的模型权重。建议删掉这一行，只保留 `HF_HOME`。临时绕过：运行 eval 前 `unset TRANSFORMERS_CACHE`。
+> ⚠️ **TRANSFORMERS_CACHE 陷阱**：如果以前 `~/.bashrc` 设过 `TRANSFORMERS_CACHE`
+> 且跟 `HF_HOME/hub` 不一致，transformers 会优先读它，导致 vLLM 下到 HF_HOME 的
+> 权重 transformers 找不到。**直接删掉那一行**。
 
 ---
 
-## 版本依赖矩阵（速查，2026-05 实测）
+## 3. 跑评测
 
-| Env | Python | torch | vLLM | transformers | 支持模型 |
-|---|---|---|---|---|---|
-| legacy | 3.11 | 2.6.0+cu124 | 0.8.5 | 4.51.3 | LLaVA-1.5, Qwen2.5-VL |
-| current | 3.11 | 2.9.0+cu128 | 0.11.2 | 4.57.6 | Qwen3-VL, InternVL3.5（vLLM）+ LLaVA-OV-1.5, Molmo2-*（HF backend）|
+```bash
+cd /path/to/UnifiedMLM
+source .venv/bin/activate                                # 或直接调 .venv/bin/unifiedmlm-eval
+
+# 单卡 vLLM 模型（GPU 0）
+CUDA_VISIBLE_DEVICES=0 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+  unifiedmlm-eval --config configs/eval/qwen3vl_mmbench_subset.yaml
+
+# 多卡 HF backend 模型（跨 GPU 2+3，device_map="auto" 自动 split）
+CUDA_VISIBLE_DEVICES=2,3 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+  unifiedmlm-eval --config configs/eval/pixtral12b_mmbench_subset.yaml
+```
 
 ---
 
-## 常见问题
+## 4. 模型 / Backend 一览（13 个 wrapper）
+
+| 模型 | 注册名 | Backend | 卡数 (24G) | 备注 |
+|---|---|---|---|---|
+| LLaVA-1.5-7B | `llava-1.5-7b` | vLLM | 1 | 论文复现基线 |
+| Qwen2.5-VL-7B | `qwen2.5-vl-7b` | vLLM | 1 | `limit_mm_per_prompt video=0` 必加 |
+| Qwen3-VL-8B | `qwen3-vl-8b` | vLLM | 1 | 同上；`max_model_len=8192` |
+| InternVL3.5-8B | `internvl3.5-8b` | vLLM | 1 | `max_dynamic_patch=6` 控视觉 token |
+| Phi-4 Multimodal | `phi-4-multimodal` | vLLM | 1 | `batch_size: 1`（不同分辨率不能 batch）|
+| LLaVA-OneVision-1.5-8B | `llava-onevision-1.5-8b` | **HF** | 1 | 走 `qwen_vl_utils.process_vision_info` |
+| Pixtral-12B | `pixtral-12b` | **HF, `device_map=auto`** | 2 | 12 B 单卡装不下；TP=2 NCCL fail |
+| Molmo2-O-7B | `molmo2-o-7b` | **HF** | 1 | `AutoModelForImageTextToText` + remote code |
+| Molmo2-8B / 4B | `molmo2-8b` / `molmo2-4b` | **HF** | 1 | 同上模板（未下载权重）|
+| GLM-4V-9B | `glm-4v-9b` | **HF, `device_map=auto`** | 2 | fp32 存储 cast 峰值大；`use_cache=False` + `num_hidden_layers` patch |
+| Kimi-VL-A3B | `kimi-vl-a3b` | **HF, `device_map=auto`** | 2 | `PytorchGELUTanh` monkey-patch + `use_cache=False` |
+| DeepSeek-VL2-Small | `deepseek-vl2-small` | (vLLM TP=2 暂 bug) | 2 | vLLM 0.11.2 `org_vocab_size` assertion；待 fix |
+
+> wrapper 全部支持 `config.backend: vllm | hf`（HF 之外的有 vLLM-only 也接受 `backend: vllm`
+> 显式）。各 yaml 默认值见 `configs/eval/*.yaml`。
+
+---
+
+## 5. MMBench-subset (100q) 实测分数（GPU 0/2+3，单 uv venv）
+
+| 模型 | acc | 耗时 |
+|---|---|---|
+| Qwen2.5-VL-7B | 0.90 | 7.8 s |
+| Qwen3-VL-8B | 0.96 | 6.4 s |
+| InternVL3.5-8B | 0.90 | 17.1 s |
+| LLaVA-OV-1.5-8B | 0.99 | 10.9 s |
+| Pixtral-12B | 0.89 | 17.6 s |
+| Molmo2-O-7B | 0.96 | 16.5 s |
+| Phi-4 Multimodal | 0.71 | 19.5 s |
+| GLM-4V-9B | 1.00 | 150.7 s |
+| Kimi-VL-A3B | 0.97 | 188.3 s |
+
+GLM-4V / Kimi-VL 慢是因为 `use_cache=False`（remote code 跟新 cache API 不兼容的解法）。
+
+---
+
+## 6. 常见问题
 
 | 现象 | 排查 |
 |---|---|
-| `Unknown model class 'Qwen3VLForConditionalGeneration'` | env 用错了——这个 arch 只有 env-current 的 vLLM 认识 |
-| `Model architectures ['LLaVAOneVision1_5_ForConditionalGeneration'] are not supported` | YAML 里加 `backend: hf`（vLLM 还没合并这个 arch）|
-| `Model architectures ['Molmo2ForConditionalGeneration'] are not supported` | 同上，`backend: hf` |
-| `Unrecognized configuration class ... for AutoModelForCausalLM` | Molmo 2 走 `AutoModelForImageTextToText`，wrapper 已经处理；如果是自己 import，注意用对 Auto class |
-| `OSError: We couldn't connect to 'https://hf-mirror.com' ... and couldn't find them in the cached files` | 你 `~/.bashrc` 里 TRANSFORMERS_CACHE 指错了。`unset TRANSFORMERS_CACHE` 后重试 |
-| `CUDA out of memory` | 降 `gpu_memory_util` → 0.85；降 batch_size；新模型同时降 `max_pixels` 或 `max_dynamic_patch`；HF backend 确保 `dtype: bfloat16` |
-| `KV cache memory ... is larger than available` (Qwen-VL) | 已修：wrapper 显式 `limit_mm_per_prompt={"image": 1, "video": 0}` 禁掉 video profiling |
-| `driver too old (found 12040)` | torch wheel 是 cu13 build，跟 driver 12.4 不兼容。换 cu12 wheel 的 vLLM（≤0.16） |
-| 两个 env 装下来磁盘紧 | 共享 HF_HOME 是关键；conda env 本身 ~8 GB 一个，可接受 |
+| `Unknown model class 'Qwen3VLForConditionalGeneration'` | vLLM 装老了；`uv pip install --upgrade vllm` |
+| `Model architectures ['LLaVAOneVision1_5_*'] are not supported` | 把 yaml 改成 `backend: hf` |
+| `Molmo2Processor has no attribute _get_num_multimodal_tokens` | vLLM 0.11.2 不识别 Molmo2 arch → `backend: hf` |
+| `Unrecognized configuration class ... for AutoModelForCausalLM` | Molmo 2 用 `AutoModelForImageTextToText`；wrapper 已处理 |
+| `OSError: We couldn't connect to 'https://hf-mirror.com'... and couldn't find in cached files` | `unset TRANSFORMERS_CACHE` 后重试；并删 `~/.bashrc` 那一行 |
+| `CUDA out of memory`（vLLM 加载时）| 12 B+ 模型单卡装不下 → 把 yaml 改成 `backend: hf` + `device_map: auto`，跑时 `CUDA_VISIBLE_DEVICES=多卡` |
+| `KV cache memory ... too small` | 降 `max_model_len`（8192 通常够）或升 `gpu_memory_util` 到 0.95 |
+| GLM-4V `'ChatGLMConfig' has no attribute 'num_hidden_layers'` | wrapper `_init_hf` 里 monkey-patch 已处理；如果手写代码遇到，加 `cfg.num_hidden_layers = cfg.num_layers` |
+| Kimi-VL `cannot import name 'PytorchGELUTanh'` | wrapper `_init_hf` 已 alias 到 `GELUTanh`；如果手写代码遇到，加同样 patch |
+| `driver too old (found 12040)` | torch wheel 是 cu13；用 cu128 wheel（`pyproject.toml` 默认） |
 
 ---
 
-## 一句话总结
+## 7. 为什么不再用 conda 多 env
 
-**2 个 env，共享一个 HF 缓存**：
-- `unifiedmlm-legacy` ← LLaVA-1.5 + Qwen2.5-VL（论文复现）
-- `unifiedmlm-current` ← 其它 5 个新模型（vLLM 原生 2 个 + HF backend 3 个 family）
+| 历史方案 | 实际遇到 |
+|---|---|
+| env-legacy: vllm 0.8.5 跑 LLaVA-1.5 + Qwen2.5-VL | vLLM 0.11.2 完全向后兼容这两个，没必要老版本 |
+| env-current: vllm 0.10-0.11 跑新 vLLM 原生模型 | ✅ 保留作为核心，迁到 uv |
+| env-molmo2: vllm ≥ 0.11 跑 Molmo 2 | vLLM 主线没合并 Molmo2；升 vLLM 0.21 又 cu13 不兼容驱动 → 改走 HF backend |
+| 一些模型（LLaVA-OV-1.5）vLLM 完全不支持 | HF backend 兜底 |
 
-切换用 `conda activate unifiedmlm-<name>`，剩下的 UnifiedMLM 代码和 config 完全通用。
-驱动升级到支持 CUDA 13 后，可以把 HF backend 的两个模型切回 `backend: vllm`。
+结果：**单 vLLM 0.11.2 + HF backend 兜底 = 13 个 wrapper 都能在同一个 venv 里跑**。
+
+---
+
+## 8. 一句话总结
+
+```bash
+uv venv .venv --python 3.11 && uv pip install -e .
+```
+
+然后 `CUDA_VISIBLE_DEVICES=... .venv/bin/unifiedmlm-eval --config configs/eval/<x>.yaml` 即可。

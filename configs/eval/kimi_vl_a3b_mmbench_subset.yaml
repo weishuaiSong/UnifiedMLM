@@ -1,0 +1,27 @@
+# Eval Kimi-VL-A3B-Instruct (Moonshot MoE 16B/3B-active) on shijianS01/mmbench-subset.
+# 16B MoE 单卡装不下；走 HF backend + device_map="auto"。
+model:
+  name: kimi-vl-a3b
+  config:
+    backend: hf
+    model_path: moonshotai/Kimi-VL-A3B-Instruct
+    dtype: bfloat16
+    device_map: auto
+    sampling:
+      temperature: 0.0
+      max_tokens: 128
+
+benchmark:
+  name: mmbench
+  config:
+    hf_path: shijianS01/mmbench-subset
+    hf_name: default
+    split: eval
+
+extractor:
+  sim_threshold: 0.5
+  sentence_model: sentence-transformers/all-MiniLM-L6-v2
+
+# HF backend 逐条 generate；batch_size 仅用于 benchmark dataloader 分块。
+batch_size: 4
+output_dir: outputs/kimi_vl_a3b_mmbench_subset

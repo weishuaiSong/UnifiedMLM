@@ -1,0 +1,28 @@
+# Eval Pixtral-12B (Mistral Nemo) on shijianS01/mmbench-subset (100 samples).
+# Pixtral-12B 在 bf16 下 weights ~24G，单张 24G 卡装不下；TP=2 在当前环境 NCCL
+# 起不来；走 HF backend + device_map="auto" 跨多卡 split。
+model:
+  name: pixtral-12b
+  config:
+    backend: hf
+    model_path: mistral-experimental/pixtral-12b
+    dtype: bfloat16
+    device_map: auto      # 跨 CUDA_VISIBLE_DEVICES 自动 split
+    sampling:
+      temperature: 0.0
+      max_tokens: 128
+
+benchmark:
+  name: mmbench
+  config:
+    hf_path: shijianS01/mmbench-subset
+    hf_name: default
+    split: eval
+
+extractor:
+  sim_threshold: 0.5
+  sentence_model: sentence-transformers/all-MiniLM-L6-v2
+
+# HF backend 逐条 generate；batch_size 仅用于 benchmark dataloader 分块。
+batch_size: 4
+output_dir: outputs/pixtral12b_mmbench_subset
