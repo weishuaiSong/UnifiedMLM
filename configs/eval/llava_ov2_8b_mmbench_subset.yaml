@@ -1,0 +1,34 @@
+# Eval LLaVA-OneVision-2-8B-Instruct on shijianS01/mmbench-subset (100 samples).
+#
+# Backend 说明：
+#   官方推理路径是 transformers AutoModelForImageTextToText（trust_remote_code），
+#   要求 transformers >= 5.7 —— 主 venv (trf 4.57) 跑不了，A100 上用 .venv-qwen35
+#   (trf 5.10.2)。vLLM 0.11.2 不识别该架构；.venv-qwen35 的新 vLLM 未验证，
+#   想试把 backend 改成 vllm。
+#   依赖：模型卡要求 pillow + decord（decord 是视频链路的，图像评测通常不触发；
+#   remote code import 报缺就 pip install decord）。
+model:
+  name: llava-onevision-2-8b
+  config:
+    backend: hf
+    model_path: lmms-lab-encoder/LLaVA-OneVision-2-8B-Instruct
+    dtype: bfloat16
+    device: cuda:0
+    sampling:
+      temperature: 0.0
+      max_tokens: 128
+
+benchmark:
+  name: mmbench
+  config:
+    hf_path: shijianS01/mmbench-subset
+    hf_name: default
+    split: eval
+
+extractor:
+  sim_threshold: 0.5
+  sentence_model: sentence-transformers/all-MiniLM-L6-v2
+
+# HF backend 逐条 generate；batch_size 仅用于 benchmark dataloader 分块大小。
+batch_size: 4
+output_dir: outputs/llava_ov2_8b_mmbench_subset

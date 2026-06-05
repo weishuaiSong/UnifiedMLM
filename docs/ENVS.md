@@ -140,6 +140,7 @@ CUDA_VISIBLE_DEVICES=2,3 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 | InternVL3.5-8B | `internvl3.5-8b` | vLLM | 1 | `max_dynamic_patch=6` 控视觉 token |
 | Phi-4 Multimodal | `phi-4-multimodal` | vLLM | 1 | `batch_size: 1`（不同分辨率不能 batch）|
 | LLaVA-OneVision-1.5-8B | `llava-onevision-1.5-8b` | **HF** | 1 | 走 `qwen_vl_utils.process_vision_info` |
+| LLaVA-OneVision-2-8B | `llava-onevision-2-8b` | **HF** | 1 (80G) | 需 trf ≥ 5.7 → **只能跑在 .venv-qwen35**；`AutoModelForImageTextToText` + remote code |
 | Pixtral-12B | `pixtral-12b` | **HF, `device_map=auto`** | 2 | 12 B 单卡装不下；TP=2 NCCL fail |
 | Molmo2-O-7B | `molmo2-o-7b` | **HF** | 1 | `AutoModelForImageTextToText` + remote code |
 | Molmo2-8B / 4B | `molmo2-8b` / `molmo2-4b` | **HF** | 1 | 同上模板（未下载权重）|
