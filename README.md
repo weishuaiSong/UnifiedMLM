@@ -42,8 +42,11 @@ uv venv .venv --python 3.11 && uv pip install -e .
 | Kimi-VL-A3B | `kimi-vl-a3b` | HF, `device_map=auto` | **2** | 0.97 |
 | DeepSeek-VL2-Small | `deepseek-vl2-small` | vLLM TP=2 (待 fix) | 2 | (vLLM 0.11.2 bug) |
 | Molmo2-8B / 4B | `molmo2-8b` / `molmo2-4b` | HF | 1 | (未下载权重) |
+| Qwen3.5-4B / 9B | `qwen3.5-4b` / `qwen3.5-9b` | vLLM **≥0.17，单独 venv** | 1 | (A100 测试中) |
 
 > 模型权重通过共享 `HF_HOME` 缓存，cross-backend / cross-model 复用。
+> Qwen3.5 需要 vLLM ≥ 0.17，主 venv (0.11.2) 跑不了——单开 `.venv-qwen35`，
+> 见 [`docs/ENVS.md` §1.5](docs/ENVS.md)。
 
 ---
 

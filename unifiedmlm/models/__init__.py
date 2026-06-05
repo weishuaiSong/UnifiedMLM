@@ -13,6 +13,7 @@ from . import deepseek_vl2  # noqa: F401
 from . import glm4v  # noqa: F401
 from . import phi4_mm  # noqa: F401
 from . import kimi_vl  # noqa: F401
+from . import qwen3_5  # noqa: F401
 
 __all__ = [
     "BaseVLMModel",

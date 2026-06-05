@@ -1,0 +1,31 @@
+# Eval Qwen3.5-4B on shijianS01/mmbench-subset (100 samples).
+# ⚠️ 需要 vLLM ≥ 0.17 —— 主 venv (0.11.2) 跑不了，用 .venv-qwen35，
+#    安装步骤见 docs/ENVS.md §"Qwen3.5 单独 venv (A100)"。
+model:
+  name: qwen3.5-4b
+  config:
+    model_path: Qwen/Qwen3.5-4B
+    tensor_parallel: 1
+    max_model_len: 8192      # mmbench prompt 短，8192 足够；native 262k 用不着
+    gpu_memory_util: 0.9
+    # Cap visual tokens（同 Qwen3-VL 的 knob）；A100 80G 其实不需要，
+    # 保留是为了跟其它 qwen 系 config 口径一致。
+    max_pixels: 1003520
+    enable_thinking: false   # MCQ 评测关 thinking；开了答案会被 <think> 吃掉
+    sampling:
+      temperature: 0.0
+      max_tokens: 128
+
+benchmark:
+  name: mmbench
+  config:
+    hf_path: shijianS01/mmbench-subset
+    hf_name: default
+    split: eval
+
+extractor:
+  sim_threshold: 0.5
+  sentence_model: sentence-transformers/all-MiniLM-L6-v2
+
+batch_size: 16
+output_dir: outputs/qwen3_5_4b_mmbench_subset

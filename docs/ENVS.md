@@ -44,6 +44,56 @@ uv pip install -e .
 
 ---
 
+## 1.5 Qwen3.5 单独 venv（A100 测试机）
+
+> Qwen3.5（原生多模态，无单独 "-VL" 线；4B / 9B / 397B-A17B）需要
+> **vLLM ≥ 0.17**，主 venv 锁的 0.11.2 跑不了，也不要把主 venv 升上去
+> （会破坏 §4 里靠 0.11.2 验证过的 13 个 wrapper）。单开一个 venv：
+
+```bash
+cd /path/to/UnifiedMLM && git pull
+
+# 1. 单独 venv（Python 3.11，与主 .venv 并存）
+uv venv .venv-qwen35 --python 3.11
+
+# 2. 先装新 vLLM（自带配套 torch / transformers）。
+#    --torch-backend=auto 让 uv 按 nvidia-smi 驱动版本选 cu 轮子；
+#    A100 驱动较老（<580）时新 torch 的 cu13 轮子会报 driver too old，
+#    那就显式 --torch-backend=cu128。
+uv pip install -p .venv-qwen35 "vllm>=0.18" --torch-backend=auto
+
+# 3. 项目本体 --no-deps 装入（绕开 pyproject 里 vllm 0.11.2 的旧 pin），
+#    再补 eval 链路的轻量依赖
+uv pip install -p .venv-qwen35 -e . --no-deps
+uv pip install -p .venv-qwen35 datasets sentence-transformers scikit-learn \
+  pyyaml tqdm pandas pillow huggingface-hub hf-transfer
+
+# 4. 校验
+.venv-qwen35/bin/python -c "import torch, vllm, transformers; \
+  print(f'torch {torch.__version__} cuda={torch.cuda.is_available()} | vllm {vllm.__version__} | trf {transformers.__version__}')"
+```
+
+下载权重 + 冒烟（HF_HOME 仍按 §2 共享）：
+
+```bash
+HF_HUB_ENABLE_HF_TRANSFER=1 .venv-qwen35/bin/hf download Qwen/Qwen3.5-4B
+
+CUDA_VISIBLE_DEVICES=0 \
+  .venv-qwen35/bin/unifiedmlm-eval --config configs/eval/qwen3_5_4b_mmbench_subset.yaml
+```
+
+注册名：`qwen3.5-4b` / `qwen3.5-9b`（A100 80G 单卡 9B 也轻松，改 yaml 的
+`model_path` 即可）。注意事项：
+
+| 事项 | 说明 |
+|---|---|
+| thinking mode | Qwen3.5 默认开。config `enable_thinking: false` 走 chat template 关掉（MCQ 评测默认）；wrapper 对漏出来的 `<think>` 块有 strip 兜底，`per_sample.jsonl` 的 metadata 里 `had_think_block` 可查 |
+| `Unknown model class 'Qwen3_5ForConditionalGeneration'` | 用错 venv 了（vLLM < 0.17）；确认命令走 `.venv-qwen35/bin/` |
+| `driver too old` | torch 拉了 cu13 轮子；重装时 `--torch-backend=cu128` |
+| TRL GRPO colocate 报 weight prefix mismatch | 已知上游问题（QwenLM/Qwen3.6#64），只影响训练 colocate，纯推理评测不受影响 |
+
+---
+
 ## 2. HF 缓存
 
 所有 backend（vLLM、transformers）共用同一份 `HF_HOME`。
