@@ -10,6 +10,9 @@ from .vllm_chat import VLLMChatModel
 
 
 class _Ovis25Base(VLLMChatModel):
+    # video=0 必须：不关的话 vLLM 显存 profiling 会拿 dummy video 喂
+    # Ovis2_5Processor，0.19.1 上直接 ValueError
+    DEFAULT_LIMIT_MM = {"image": 1, "video": 0}
     STRIP_THINK = True  # Ovis2.5 有可选 thinking budget；默认关，strip 兜底
 
 
