@@ -1,0 +1,26 @@
+# Eval glm-4.1v-9b-thinking on shijianS01/mmbench-subset (100 samples). vLLM chat-API wrapper
+# (unifiedmlm/models/vllm_chat.py)，需要新 vLLM（A800 .venv-vllm）。 thinking 无开关，wrapper 剥 <answer>；max_tokens 必须大
+model:
+  name: glm-4.1v-9b-thinking
+  config:
+    model_path: zai-org/GLM-4.1V-9B-Thinking
+    tensor_parallel: 1
+    max_model_len: 8192
+    gpu_memory_util: 0.9
+    sampling:
+      temperature: 0.0
+      max_tokens: 2048
+
+benchmark:
+  name: mmbench
+  config:
+    hf_path: shijianS01/mmbench-subset
+    hf_name: default
+    split: eval
+
+extractor:
+  sim_threshold: 0.5
+  sentence_model: sentence-transformers/all-MiniLM-L6-v2
+
+batch_size: 16
+output_dir: outputs/glm41v_9b_mmbench_subset

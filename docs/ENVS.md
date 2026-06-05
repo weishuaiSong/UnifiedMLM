@@ -151,6 +151,30 @@ CUDA_VISIBLE_DEVICES=2,3 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 > wrapper 全部支持 `config.backend: vllm | hf`（HF 之外的有 vLLM-only 也接受 `backend: vllm`
 > 显式）。各 yaml 默认值见 `configs/eval/*.yaml`。
 
+### 4.5 vLLM chat-API 批次（2026-06，A800 `.venv-vllm`）
+
+> 共享基类 `unifiedmlm/models/vllm_chat.py`：走 `LLM.chat()` 让 vLLM 自己注入
+> vision placeholder（11 个家族模板各异，不再手写）；图像传 base64 data URL。
+> 需要**新 vLLM**（≥0.12 区间，A800 上单独 `.venv-vllm`），主 venv 0.11.2 跑不全。
+
+| 模型 | 注册名 | 规模 | 备注 |
+|---|---|---|---|
+| Gemma 3 | `gemma-3-4b` / `gemma-3-12b` | 4B/12B | ⚠️ gated，下载需 HF_TOKEN；强制 bf16 |
+| MiniCPM-V 4.5 | `minicpm-v-4.5` | 8B | 混合 thinking 默认关 |
+| Ovis 2.5 | `ovis2.5-9b` / `ovis2.5-2b` | 9B/2B | |
+| GLM-4.1V-Thinking | `glm-4.1v-9b-thinking` | 9B | thinking 无开关，wrapper 剥 `<answer>`；可替代老 GLM-4V-9B |
+| Mistral Small 3.1 | `mistral-small-3.1-24b` | 24B | 80G 单卡；HF 格式跑不通时 yaml 开 mistral 三件套 |
+| Aya Vision | `aya-vision-8b` | 8B | ⚠️ gated（CC-BY-NC），需 HF_TOKEN |
+| ERNIE 4.5 VL | `ernie-4.5-vl-28b-a3b` | 28B-A3B | 权重 ~56G，gpu_memory_util 0.95 |
+| Keye-VL 1.5 | `keye-vl-1.5-8b` | 8B | auto-thinking，strip 兜底 |
+| Eagle 2.5 | `eagle2.5-8b` | 8B | |
+| SmolVLM2 | `smolvlm2-2.2b` | 2.2B | small 端点 |
+| Intern-S1-mini | `intern-s1-mini` | 8B | `chat_template_kwargs: {enable_thinking: false}` |
+
+跳过未接：Step3-VL / MiniMax-VL-01 / GLM-4.5V / ERNIE-VL-424B（百 B 级，单机放不下）、
+HunyuanVL（HF repo 401，未确认开放权重）。Molmo2 / Kimi-VL / DeepSeek-VL2 的 vLLM
+原生支持已进上游，主线版本到位后把各自 yaml 的 `backend` 切回 `vllm` 即可提速。
+
 ---
 
 ## 5. MMBench-subset (100q) 实测分数（GPU 0/2+3，单 uv venv）

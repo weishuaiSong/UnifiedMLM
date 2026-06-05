@@ -1,0 +1,28 @@
+# Eval mistral-small-3.1-24b on shijianS01/mmbench-subset (100 samples). vLLM chat-API wrapper
+# (unifiedmlm/models/vllm_chat.py)，需要新 vLLM（A800 .venv-vllm）。 24B，80G 单卡；4090 跑不了
+model:
+  name: mistral-small-3.1-24b
+  config:
+    model_path: mistralai/Mistral-Small-3.1-24B-Instruct-2503
+    tensor_parallel: 1
+    max_model_len: 8192
+    gpu_memory_util: 0.9
+    # 报 tokenizer/template 错时打开 mistral 格式三件套：
+    # llm_kwargs: {tokenizer_mode: mistral, config_format: mistral, load_format: mistral}
+    sampling:
+      temperature: 0.0
+      max_tokens: 128
+
+benchmark:
+  name: mmbench
+  config:
+    hf_path: shijianS01/mmbench-subset
+    hf_name: default
+    split: eval
+
+extractor:
+  sim_threshold: 0.5
+  sentence_model: sentence-transformers/all-MiniLM-L6-v2
+
+batch_size: 16
+output_dir: outputs/mistral_small31_mmbench_subset

@@ -15,6 +15,17 @@ from . import glm4v  # noqa: F401
 from . import phi4_mm  # noqa: F401
 from . import kimi_vl  # noqa: F401
 from . import qwen3_5  # noqa: F401
+from . import gemma3  # noqa: F401
+from . import minicpm_v  # noqa: F401
+from . import ovis  # noqa: F401
+from . import glm4_1v  # noqa: F401
+from . import mistral_small  # noqa: F401
+from . import aya_vision  # noqa: F401
+from . import ernie45_vl  # noqa: F401
+from . import keye_vl  # noqa: F401
+from . import eagle2_5  # noqa: F401
+from . import smolvlm2  # noqa: F401
+from . import intern_s1  # noqa: F401
 
 __all__ = [
     "BaseVLMModel",

@@ -1,0 +1,28 @@
+# Eval intern-s1-mini on shijianS01/mmbench-subset (100 samples). vLLM chat-API wrapper
+# (unifiedmlm/models/vllm_chat.py)，需要新 vLLM（A800 .venv-vllm）。 默认开 thinking，这里关掉（MCQ 评测口径，同 qwen3.5）
+model:
+  name: intern-s1-mini
+  config:
+    model_path: internlm/Intern-S1-mini
+    tensor_parallel: 1
+    max_model_len: 8192
+    gpu_memory_util: 0.9
+    chat_template_kwargs:
+      enable_thinking: false
+    sampling:
+      temperature: 0.0
+      max_tokens: 2048
+
+benchmark:
+  name: mmbench
+  config:
+    hf_path: shijianS01/mmbench-subset
+    hf_name: default
+    split: eval
+
+extractor:
+  sim_threshold: 0.5
+  sentence_model: sentence-transformers/all-MiniLM-L6-v2
+
+batch_size: 16
+output_dir: outputs/intern_s1_mini_mmbench_subset

@@ -1,0 +1,26 @@
+# Eval minicpm-v-4.5 on shijianS01/mmbench-subset (100 samples). vLLM chat-API wrapper
+# (unifiedmlm/models/vllm_chat.py)，需要新 vLLM（A800 .venv-vllm）。 混合 thinking 默认关
+model:
+  name: minicpm-v-4.5
+  config:
+    model_path: openbmb/MiniCPM-V-4_5
+    tensor_parallel: 1
+    max_model_len: 8192
+    gpu_memory_util: 0.9
+    sampling:
+      temperature: 0.0
+      max_tokens: 128
+
+benchmark:
+  name: mmbench
+  config:
+    hf_path: shijianS01/mmbench-subset
+    hf_name: default
+    split: eval
+
+extractor:
+  sim_threshold: 0.5
+  sentence_model: sentence-transformers/all-MiniLM-L6-v2
+
+batch_size: 16
+output_dir: outputs/minicpm_v45_mmbench_subset
