@@ -7,8 +7,9 @@ model:
     tensor_parallel: 1
     max_model_len: 8192
     gpu_memory_util: 0.9
-    # 报 tokenizer/template 错时打开 mistral 格式三件套：
-    # llm_kwargs: {tokenizer_mode: mistral, config_format: mistral, load_format: mistral}
+    # HF 格式在 vllm 0.19.1 上 profiling 报错（MistralCommonPixtralProcessor
+    # 收到空 text），mistral 格式三件套绕开：
+    llm_kwargs: {tokenizer_mode: mistral, config_format: mistral, load_format: mistral}
     sampling:
       temperature: 0.0
       max_tokens: 128
