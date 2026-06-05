@@ -2,8 +2,10 @@
 
 HF: openbmb/MiniCPM-V-4_5
 vLLM: MiniCPMV（remote code 架构），0.10.1 起支持 4.5。
-混合 thinking：默认关；要开在 yaml 给 chat_template_kwargs: {enable_thinking: true}
-并把 sampling.max_tokens 提到 ≥2048。
+混合 thinking：⚠️ 实测默认**开**（与卡片宣传相反）——MCQ 评测必须
+chat_template_kwargs: {enable_thinking: false}，否则 <think> 吃光 token 预算；
+STRIP_THINK + 大 max_tokens 兜底。
+另：trf 5.x 下 remote tokenizer 类不加载（im_start_id 缺失），需要 trf 4.x。
 """
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 # Eval minicpm-v-4.5 on shijianS01/mmbench-subset (100 samples). vLLM chat-API wrapper
-# (unifiedmlm/models/vllm_chat.py)，需要新 vLLM（A800 .venv-vllm）。 混合 thinking 默认关
+# (unifiedmlm/models/vllm_chat.py)，需要新 vLLM（A800 .venv-vllm）。 ⚠️ 混合 thinking 默认开
 model:
   name: minicpm-v-4.5
   config:
@@ -7,9 +7,14 @@ model:
     tensor_parallel: 1
     max_model_len: 8192
     gpu_memory_util: 0.9
+    # 实测默认开 thinking：max_tokens=128 时 <think> 吃光预算，11 条提取失败、
+    # acc 掉到 0.71。chat_template_kwargs 万一旧 vLLM 不支持，
+    # max_tokens 2048 + STRIP_THINK 兜底。
+    chat_template_kwargs:
+      enable_thinking: false
     sampling:
       temperature: 0.0
-      max_tokens: 128
+      max_tokens: 2048
 
 benchmark:
   name: mmbench
