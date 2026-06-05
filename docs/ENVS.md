@@ -140,7 +140,7 @@ CUDA_VISIBLE_DEVICES=2,3 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 | InternVL3.5-8B | `internvl3.5-8b` | vLLM | 1 | `max_dynamic_patch=6` 控视觉 token |
 | Phi-4 Multimodal | `phi-4-multimodal` | vLLM | 1 | `batch_size: 1`（不同分辨率不能 batch）|
 | LLaVA-OneVision-1.5-8B | `llava-onevision-1.5-8b` | **HF** | 1 | 走 `qwen_vl_utils.process_vision_info` |
-| LLaVA-OneVision-2-8B | `llava-onevision-2-8b` | **HF** | 1 (80G) | 需 trf ≥ 5.7 → **只能跑在 .venv-qwen35**；`AutoModelForImageTextToText` + remote code |
+| LLaVA-OneVision-2-8B | `llava-onevision-2-8b` | **HF** | 1 (80G) | 需 trf ≥ 5.7（A100 `.venv-qwen35` / A800 `.venv-ov2`）；`AutoModelForImageTextToText` + remote code，另需 `opencv-python-headless`。A800 实测 0.97 @ mmbench-subset。⚠️ A800 上 HF 下载走 `HF_ENDPOINT=https://hf-mirror.com` + `HF_HUB_DISABLE_XET=1` 直连（mihomo 代理会静默卡死）；pypi 用清华镜像 |
 | Pixtral-12B | `pixtral-12b` | **HF, `device_map=auto`** | 2 | 12 B 单卡装不下；TP=2 NCCL fail |
 | Molmo2-O-7B | `molmo2-o-7b` | **HF** | 1 | `AutoModelForImageTextToText` + remote code |
 | Molmo2-8B / 4B | `molmo2-8b` / `molmo2-4b` | **HF** | 1 | 同上模板（未下载权重）|
@@ -161,6 +161,7 @@ CUDA_VISIBLE_DEVICES=2,3 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 | Qwen3-VL-8B | 0.96 | 6.4 s |
 | InternVL3.5-8B | 0.90 | 17.1 s |
 | LLaVA-OV-1.5-8B | 0.99 | 10.9 s |
+| LLaVA-OV-2-8B | 0.97 | 10.3 s（A800 80G 单卡，.venv-ov2） |
 | Pixtral-12B | 0.89 | 17.6 s |
 | Molmo2-O-7B | 0.96 | 16.5 s |
 | Phi-4 Multimodal | 0.71 | 19.5 s |
