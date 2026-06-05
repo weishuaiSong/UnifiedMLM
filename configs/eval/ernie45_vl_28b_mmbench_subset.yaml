@@ -7,9 +7,11 @@ model:
     tensor_parallel: 1
     max_model_len: 8192
     gpu_memory_util: 0.9
+    # 实测：模型先长篇（中文）描述图片再推理，128 token 远不够答案出来
+    # （acc 0.30 / 61% 提取率均为截断伪象）。
     sampling:
       temperature: 0.0
-      max_tokens: 128
+      max_tokens: 2048
 
 benchmark:
   name: mmbench
