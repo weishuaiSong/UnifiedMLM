@@ -30,6 +30,23 @@ _LETTER_PATTERNS = [
     re.compile(r"\b([A-E])\b"),  # last-resort: any standalone letter
 ]
 
+# Step 0（2026-06 加）：CoT 风格长输出的"最终答案标记"。
+# 这些标记只在模型显式收尾时出现，高精确；取**最后一次**出现（推理过程
+# 中途讨论选项不会污染）。短输出（裸字母）不含这些标记 → 走原 Step 1，
+# 与 paper pipeline 的行为完全一致。
+# 背景：ERNIE-4.5-VL 等模型先长篇推理再 \boxed{B} 收尾，原规则从头扫
+# 第一个命中，抓到讨论中的字母，100 题里错了 ~30 个的提取。
+_FINAL_ANSWER_PATTERNS = [
+    re.compile(r"\\boxed\{\(?([A-E])\)?\}"),
+    re.compile(
+        r"(?:final\s+answer|correct\s+(?:answer|option|choice))\s*(?:is|:)?\s*\*{0,2}\(?([A-E])\)?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"(?:正确答案|最终答案|答案)(?:是|为|：|:)\s*\*{0,2}\(?([A-E])\)?"),
+    re.compile(r"\*{0,2}answers?\*{0,2}\s*[:：]\s*\*{0,2}\(?([A-E])\)?\b", re.IGNORECASE),  # **Answer:** B
+    re.compile(r"\*\*\(?([A-E])\)?\*\*[。\.\s]*$"),  # 以加粗字母收尾
+]
+
 
 class TwoStepExtractor:
     """Configurable extractor.
@@ -65,6 +82,12 @@ class TwoStepExtractor:
             return ExtractionResult(predicted="", method="none", raw=text)
 
         valid = set(choices.keys())
+
+        # Step 0: explicit final-answer markers (CoT-style outputs), last match wins.
+        for pat in _FINAL_ANSWER_PATTERNS:
+            ms = [m for m in pat.finditer(text) if m.group(1) and m.group(1).upper() in valid]
+            if ms:
+                return ExtractionResult(predicted=ms[-1].group(1).upper(), method="rule", raw=text)
 
         # Step 1: regex rule match against letter patterns.
         for pat in _LETTER_PATTERNS:
